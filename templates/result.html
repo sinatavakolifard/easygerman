@@ -17,6 +17,12 @@
       &nbsp;·&nbsp; {{ vocab|length }} words
     </p>
 
+    {% if audio_url %}
+      <audio class="player" controls preload="metadata" src="{{ audio_url }}">
+        Your browser does not support audio playback.
+      </audio>
+    {% endif %}
+
     {% if vocab %}
       <table class="vocab">
         <thead>

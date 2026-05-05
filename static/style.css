@@ -35,6 +35,11 @@ h1 {
 .lede { color: var(--fg-muted); margin-bottom: 28px; }
 .meta { color: var(--fg-muted); margin-bottom: 20px; font-size: 14px; }
 
+.player {
+  width: 100%;
+  margin-bottom: 24px;
+}
+
 a { color: var(--accent); }
 a:hover { color: var(--accent-hover); }
 

@@ -35,7 +35,8 @@ Flask app that wraps the same pipeline. Run `python3 app.py` → <http://127.0.0
 - Reuses `transcribe`, `extract_vocab`, `translate` from `easy_german.py` (no logic duplicated).
 - Default model in the form is `small` (not `medium` like the CLI) since browser waits feel longer.
 - Allowed extensions: `.wav .mp3 .m4a .ogg .flac .mp4 .webm`. Max upload 500 MB.
-- Uploaded file goes to a `tempfile.NamedTemporaryFile`, deleted in `finally`.
+- Uploaded audio is saved to `<tmpdir>/easy-german-uploads/<uuid><ext>` (kept after processing so the result page can play it back) and served via `/audio/<token>` using `send_from_directory`. `_sweep_old_uploads()` runs on each upload and deletes files older than `UPLOAD_TTL_SECONDS` (1 hour).
+- Result page renders an `<audio controls>` element pointing at `/audio/<token>` above the vocab table.
 - Templates in `templates/` (`index.html`, `result.html`, `error.html`); CSS in `static/style.css`.
 
 ## Dependencies (`requirements.txt`)

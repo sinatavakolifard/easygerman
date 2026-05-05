@@ -9,9 +9,11 @@ from __future__ import annotations
 
 import logging
 import tempfile
+import time
+import uuid
 from pathlib import Path
 
-from flask import Flask, redirect, render_template, request, url_for
+from flask import Flask, redirect, render_template, request, send_from_directory, url_for
 from werkzeug.utils import secure_filename
 
 from easy_german import extract_vocab, transcribe, translate
@@ -19,10 +21,26 @@ from easy_german import extract_vocab, transcribe, translate
 ALLOWED_EXTS = {".wav", ".mp3", ".m4a", ".ogg", ".flac", ".mp4", ".webm"}
 MODEL_CHOICES = ["tiny", "base", "small", "medium", "large-v3"]
 
+# Uploaded audio is kept here so the result page can play it back.
+# Files are swept after UPLOAD_TTL_SECONDS on each new upload.
+UPLOAD_DIR = Path(tempfile.gettempdir()) / "easy-german-uploads"
+UPLOAD_DIR.mkdir(exist_ok=True)
+UPLOAD_TTL_SECONDS = 60 * 60
+
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 500 * 1024 * 1024  # 500 MB
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
+
+
+def _sweep_old_uploads() -> None:
+    now = time.time()
+    for f in UPLOAD_DIR.iterdir():
+        try:
+            if now - f.stat().st_mtime > UPLOAD_TTL_SECONDS:
+                f.unlink()
+        except OSError:
+            pass
 
 
 @app.route("/")
@@ -59,12 +77,13 @@ def process():
     except ValueError:
         min_count, top = 1, 50
 
-    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-        audio.save(tmp.name)
-        tmp_path = Path(tmp.name)
+    _sweep_old_uploads()
+    token = f"{uuid.uuid4().hex}{suffix}"
+    saved_path = UPLOAD_DIR / token
+    audio.save(saved_path)
 
     try:
-        transcript = transcribe(tmp_path, model_size=model)
+        transcript = transcribe(saved_path, model_size=model)
         vocab = extract_vocab(transcript, min_count=min_count, top_k=top)
         if vocab:
             translate(vocab)
@@ -76,12 +95,18 @@ def process():
             model=model,
             min_count=min_count,
             top=top,
+            audio_url=url_for("audio_file", token=token),
         )
     except Exception as exc:
         logging.exception("Pipeline failed")
+        saved_path.unlink(missing_ok=True)
         return render_template("error.html", message=str(exc)), 500
-    finally:
-        tmp_path.unlink(missing_ok=True)
+
+
+@app.route("/audio/<token>")
+def audio_file(token: str):
+    # send_from_directory rejects path traversal; tokens are UUID-derived anyway.
+    return send_from_directory(UPLOAD_DIR, token, conditional=True)
 
 
 if __name__ == "__main__":
