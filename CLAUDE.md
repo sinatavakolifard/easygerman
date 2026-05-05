@@ -11,14 +11,14 @@ CLI tool that extracts learning-worthy German vocabulary from podcast audio and 
    - drop if `zipf < 1.5` (likely names/typos/noise)
    - drop if episode count < `--min-count` (default 1)
 4. **Rank** — `score = count * max(0, 7.5 - zipf)` → frequent in episode, rare in general. Take top `--top` (default 50), then re-sort by first-occurrence index so the output follows the audio's order.
-5. **Translate** — `deep-translator` GoogleTranslator, batch with one-by-one fallback on failure (empty string on per-item failure).
-6. **Write** — Markdown table: `German | POS | Count | Meaning | Example`. POS labels mapped via `POS_LABEL` (`NOUN→noun`, `PROPN→name`, etc.). Pipes in example/meaning escaped.
+5. **Translate** — `deep-translator` GoogleTranslator. `_translate_batch()` helper does batch-with-one-by-one fallback (empty string on per-item failure). Called twice per run: once for lemmas (→ `Vocab.meaning`), once for example sentences (→ `Vocab.example_translation`) so the user gets the lemma translated in context.
+6. **Write** — Markdown table: `German | POS | Count | Meaning | Example`. The Example cell stacks the German sentence and the italicized English translation separated by `<br>` (when present). POS labels mapped via `POS_LABEL` (`NOUN→noun`, `PROPN→name`, etc.). Pipes in example/meaning escaped.
 
 ## Key constants / data
 
 - `KEEP_POS`, `POS_LABEL` — line 28-29
 - `COMMON_ZIPF_THRESHOLD = 5.0`, `RARE_ZIPF_FLOOR = 1.5` — line 34, 37
-- `Vocab` dataclass with `score` property — line 40
+- `Vocab` dataclass (incl. `meaning`, `example`, `example_translation`, `score` property) — line 40
 
 ## CLI
 

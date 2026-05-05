@@ -46,6 +46,7 @@ class Vocab:
     first_index: int = 0
     example: str = ""
     meaning: str = ""
+    example_translation: str = ""
 
     @property
     def score(self) -> float:
@@ -119,23 +120,30 @@ def extract_vocab(transcript: str, min_count: int, top_k: int) -> list[Vocab]:
     return selected
 
 
+def _translate_batch(translator: GoogleTranslator, items: list[str]) -> list[str]:
+    try:
+        return translator.translate_batch(items)
+    except Exception as exc:
+        logging.warning("Batch translation failed (%s); retrying one-by-one", exc)
+        results: list[str] = []
+        for item in items:
+            try:
+                results.append(translator.translate(item) or "")
+            except Exception:
+                results.append("")
+        return results
+
+
 def translate(vocab: list[Vocab]) -> None:
     if not vocab:
         return
-    logging.info("Translating %d words to English", len(vocab))
+    logging.info("Translating %d words and example sentences to English", len(vocab))
     translator = GoogleTranslator(source="de", target="en")
-    try:
-        results = translator.translate_batch([v.lemma for v in vocab])
-    except Exception as exc:
-        logging.warning("Batch translation failed (%s); retrying one-by-one", exc)
-        results = []
-        for v in vocab:
-            try:
-                results.append(translator.translate(v.lemma))
-            except Exception:
-                results.append("")
-    for v, t in zip(vocab, results):
-        v.meaning = (t or "").strip()
+    lemma_results = _translate_batch(translator, [v.lemma for v in vocab])
+    example_results = _translate_batch(translator, [v.example for v in vocab])
+    for v, lemma_t, example_t in zip(vocab, lemma_results, example_results):
+        v.meaning = (lemma_t or "").strip()
+        v.example_translation = (example_t or "").strip()
 
 
 def write_markdown(vocab: list[Vocab], out_path: Path, source: Path) -> None:
@@ -148,7 +156,12 @@ def write_markdown(vocab: list[Vocab], out_path: Path, source: Path) -> None:
     for v in vocab:
         example = v.example.replace("|", "\\|").replace("\n", " ")
         meaning = v.meaning.replace("|", "\\|")
-        lines.append(f"| {v.lemma} | {v.pos} | {v.count} | {meaning} | {example} |")
+        example_translation = v.example_translation.replace("|", "\\|").replace("\n", " ")
+        if example_translation:
+            example_cell = f"{example}<br>*{example_translation}*"
+        else:
+            example_cell = example
+        lines.append(f"| {v.lemma} | {v.pos} | {v.count} | {meaning} | {example_cell} |")
     out_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     logging.info("Wrote %d entries to %s", len(vocab), out_path)
 

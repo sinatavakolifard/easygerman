@@ -41,7 +41,12 @@
               <td>{{ v.pos }}</td>
               <td>{{ v.count }}</td>
               <td>{{ v.meaning }}</td>
-              <td class="example">{{ v.example }}</td>
+              <td class="example">
+                <div class="example-de">{{ v.example }}</div>
+                {% if v.example_translation %}
+                  <div class="example-en">{{ v.example_translation }}</div>
+                {% endif %}
+              </td>
             </tr>
           {% endfor %}
         </tbody>

@@ -12,6 +12,8 @@
 
 * { box-sizing: border-box; }
 
+[hidden] { display: none !important; }
+
 body {
   margin: 0;
   background: var(--bg);
@@ -144,7 +146,13 @@ table.vocab thead th {
 
 table.vocab tbody tr:last-child td { border-bottom: none; }
 table.vocab .lemma { font-weight: 600; }
-table.vocab .example { color: var(--fg-muted); font-size: 14px; }
+table.vocab .example { font-size: 14px; }
+table.vocab .example-de { color: var(--fg); }
+table.vocab .example-en {
+  margin-top: 4px;
+  font-style: italic;
+  color: var(--fg-muted);
+}
 
 details.transcript {
   margin-top: 28px;
