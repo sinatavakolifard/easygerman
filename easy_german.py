@@ -15,7 +15,7 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
-from collections import Counter
+from collections import Counter, defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -27,6 +27,77 @@ import spacy
 
 KEEP_POS = {"NOUN", "VERB", "ADJ", "ADV", "PROPN"}
 POS_LABEL = {"NOUN": "noun", "VERB": "verb", "ADJ": "adj", "ADV": "adv", "PROPN": "name"}
+
+# Map spaCy's morphological Gender feature to the matching nominative article.
+GENDER_ARTICLE = {"Masc": "der", "Fem": "die", "Neut": "das"}
+
+# Common German plural suffixes, longest-first so the suffix-stripper
+# considers the most specific match first.
+PLURAL_SUFFIXES = ("nen", "en", "er", "n", "e", "s")
+
+_UMLAUT_TABLE = str.maketrans("äöüÄÖÜ", "aouAOU")
+
+
+def _de_un_umlaut(word: str) -> str:
+    """Un-umlaut only the rightmost umlauted vowel.
+
+    German plural umlaut shifts the vowel in the head of a compound
+    (Hörbuch → Hörbücher). A blanket replacement would also strip
+    legitimate umlauts elsewhere in the word (the "ö" in "Hör-"),
+    so we only revert the last one.
+    """
+    for i in range(len(word) - 1, -1, -1):
+        if word[i] in "äöüÄÖÜ":
+            return word[:i] + word[i].translate(_UMLAUT_TABLE) + word[i + 1 :]
+    return word
+
+
+def try_singularize(plural: str, gender: str = "") -> str:
+    """Best-effort plural→singular for German nouns.
+
+    Only meant to run on tokens spaCy left untouched (lemma == surface
+    form, but Number=Plur). For each candidate we strip a plural suffix
+    and also try the un-umlauted variant (German plurals often add an
+    umlaut: Buch → Bücher, Mutter → Mütter). If wordfreq recognises a
+    candidate (>= RARE_ZIPF_FLOOR), pick the most frequent. Otherwise
+    fall back to gender-aware rule-of-thumb for compounds that aren't
+    in the dictionary.
+    """
+    candidates: list[str] = []
+    for suffix in PLURAL_SUFFIXES:
+        if plural.endswith(suffix):
+            stem = plural[: -len(suffix)]
+            if len(stem) >= 3:
+                candidates.append(stem)
+                un = _de_un_umlaut(stem)
+                if un != stem:
+                    candidates.append(un)
+    # Also try un-umlauting the original (Vater/Väter, Mutter/Mütter pattern).
+    un_orig = _de_un_umlaut(plural)
+    if un_orig != plural:
+        candidates.append(un_orig)
+
+    if candidates:
+        best = max(candidates, key=lambda c: zipf_frequency(c.lower(), "de"))
+        if zipf_frequency(best.lower(), "de") >= RARE_ZIPF_FLOOR:
+            return best
+
+    # Compound noun — wordfreq has no opinion. Apply the most common
+    # plural→singular patterns, with two refinements:
+    #   * "-en" disambiguated by gender — feminine "-e" nouns add "-n"
+    #     (Markentankstelle → Markentankstellen), masc/neut consonant
+    #     nouns add "-en" (Tür → Türen).
+    #   * "-er" plurals usually carry an umlaut shift (Hörbuch → Hörbücher),
+    #     so reverse it.
+    if plural.endswith("en"):
+        return plural[:-1] if gender == "Fem" else plural[:-2]
+    if plural.endswith("er"):
+        return _de_un_umlaut(plural[:-2])
+    if plural.endswith("e"):
+        return plural[:-1]
+    if plural.endswith(("n", "s")):
+        return plural[:-1]
+    return plural
 
 # Words with a Zipf frequency at or above this are too common to be worth
 # learning (e.g. "haben", "machen", "gut"). Zipf 5.0 is roughly the top ~3000
@@ -47,6 +118,11 @@ class Vocab:
     example: str = ""
     meaning: str = ""
     example_translation: str = ""
+    article: str = ""
+
+    @property
+    def display(self) -> str:
+        return f"{self.article} {self.lemma}" if self.article else self.lemma
 
     @property
     def score(self) -> float:
@@ -80,6 +156,9 @@ def extract_vocab(transcript: str, min_count: int, top_k: int) -> list[Vocab]:
     counts: Counter[tuple[str, str]] = Counter()
     examples: dict[tuple[str, str], str] = {}
     first_index: dict[tuple[str, str], int] = {}
+    # gender per noun lemma, voted across surface forms (e.g. "Bank" can be Fem
+    # in both meanings, but "Banken" only disambiguates as Fem when in context)
+    genders: dict[tuple[str, str], Counter[str]] = defaultdict(Counter)
 
     for sent in doc.sents:
         for tok in sent:
@@ -89,10 +168,23 @@ def extract_vocab(transcript: str, min_count: int, top_k: int) -> list[Vocab]:
                 continue
             if tok.pos_ not in KEEP_POS:
                 continue
-            key = (tok.lemma_, tok.pos_)
+            lemma = tok.lemma_
+            gender_vals = tok.morph.get("Gender") if tok.pos_ == "NOUN" else []
+            # Only try to singularize when spaCy didn't already do it
+            # (lemma == surface form). For tokens spaCy already lemmatized
+            # to the singular, leave them alone.
+            if (
+                tok.pos_ == "NOUN"
+                and tok.morph.get("Number") == ["Plur"]
+                and tok.lemma_.lower() == tok.text.lower()
+            ):
+                lemma = try_singularize(lemma, gender_vals[0] if gender_vals else "")
+            key = (lemma, tok.pos_)
             counts[key] += 1
             examples.setdefault(key, sent.text.strip())
             first_index.setdefault(key, tok.i)
+            if tok.pos_ == "NOUN" and gender_vals:
+                genders[key][gender_vals[0]] += 1
 
     vocab: list[Vocab] = []
     for (lemma, pos), count in counts.items():
@@ -101,6 +193,10 @@ def extract_vocab(transcript: str, min_count: int, top_k: int) -> list[Vocab]:
             continue
         if count < min_count:
             continue
+        article = ""
+        if pos == "NOUN" and genders[(lemma, pos)]:
+            top_gender = genders[(lemma, pos)].most_common(1)[0][0]
+            article = GENDER_ARTICLE.get(top_gender, "")
         vocab.append(
             Vocab(
                 lemma=lemma,
@@ -109,6 +205,7 @@ def extract_vocab(transcript: str, min_count: int, top_k: int) -> list[Vocab]:
                 zipf=zipf,
                 first_index=first_index[(lemma, pos)],
                 example=examples[(lemma, pos)],
+                article=article,
             )
         )
 
@@ -161,7 +258,7 @@ def write_markdown(vocab: list[Vocab], out_path: Path, source: Path) -> None:
             example_cell = f"{example}<br>*{example_translation}*"
         else:
             example_cell = example
-        lines.append(f"| {v.lemma} | {v.pos} | {v.count} | {meaning} | {example_cell} |")
+        lines.append(f"| {v.display} | {v.pos} | {v.count} | {meaning} | {example_cell} |")
     out_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     logging.info("Wrote %d entries to %s", len(vocab), out_path)
 

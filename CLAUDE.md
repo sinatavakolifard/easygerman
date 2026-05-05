@@ -5,20 +5,21 @@ CLI tool that extracts learning-worthy German vocabulary from podcast audio and 
 ## Pipeline (`easy_german.py`)
 
 1. **Transcribe** — `faster-whisper` (German, VAD filter on). Default model: `medium`. `transcribe()` joins all segment text into one string.
-2. **Tokenize / lemmatize** — spaCy `de_core_news_sm`. Loaded lazily by `load_spacy()`; exits with install instructions if missing.
+2. **Tokenize / lemmatize** — spaCy `de_core_news_sm`. Loaded lazily by `load_spacy()`; exits with install instructions if missing. For nouns, `tok.morph.get("Gender")` is collected and aggregated per lemma so the most common gender wins (mapped to `der`/`die`/`das` via `GENDER_ARTICLE`). Plurals spaCy fails to reduce (typically compound nouns like `Mineralölkonzerne`) get post-processed by `try_singularize()` — only triggered when `Number=Plur` *and* `tok.lemma_ == tok.text` so already-correct singulars are left alone. The heuristic strips common plural suffixes (`nen`, `en`, `er`, `n`, `e`, `s`), tries un-umlauted variants (rightmost umlaut only — preserves earlier umlauts in compounds like `Hörbücher`), prefers wordfreq-recognised candidates, and falls back to gender-aware suffix rules for compounds wordfreq doesn't index. Side benefit: singular and plural occurrences of the same noun collapse into one `Vocab` entry.
 3. **Filter** — keep POS in `{NOUN, VERB, ADJ, ADV, PROPN}`; drop stopwords/punct/space and tokens whose lemma isn't alpha (hyphens allowed). Then by `wordfreq.zipf_frequency(lemma, "de")`:
    - drop if `zipf >= 5.0` (too common, ~top 3000)
    - drop if `zipf < 1.5` (likely names/typos/noise)
    - drop if episode count < `--min-count` (default 1)
 4. **Rank** — `score = count * max(0, 7.5 - zipf)` → frequent in episode, rare in general. Take top `--top` (default 50), then re-sort by first-occurrence index so the output follows the audio's order.
 5. **Translate** — `deep-translator` GoogleTranslator. `_translate_batch()` helper does batch-with-one-by-one fallback (empty string on per-item failure). Called twice per run: once for lemmas (→ `Vocab.meaning`), once for example sentences (→ `Vocab.example_translation`) so the user gets the lemma translated in context.
-6. **Write** — Markdown table: `German | POS | Count | Meaning | Example`. The Example cell stacks the German sentence and the italicized English translation separated by `<br>` (when present). POS labels mapped via `POS_LABEL` (`NOUN→noun`, `PROPN→name`, etc.). Pipes in example/meaning escaped.
+6. **Write** — Markdown table: `German | POS | Count | Meaning | Example`. The German cell uses `Vocab.display`, which prepends `der`/`die`/`das` for nouns when a gender is known. The Example cell stacks the German sentence and the italicized English translation separated by `<br>` (when present). POS labels mapped via `POS_LABEL` (`NOUN→noun`, `PROPN→name`, etc.). Pipes in example/meaning escaped.
 
 ## Key constants / data
 
-- `KEEP_POS`, `POS_LABEL` — line 28-29
-- `COMMON_ZIPF_THRESHOLD = 5.0`, `RARE_ZIPF_FLOOR = 1.5` — line 34, 37
-- `Vocab` dataclass (incl. `meaning`, `example`, `example_translation`, `score` property) — line 40
+- `KEEP_POS`, `POS_LABEL`, `GENDER_ARTICLE`, `PLURAL_SUFFIXES`
+- `COMMON_ZIPF_THRESHOLD = 5.0`, `RARE_ZIPF_FLOOR = 1.5`
+- `Vocab` dataclass (incl. `meaning`, `example`, `example_translation`, `article`, `display` property, `score` property)
+- `try_singularize()` plural→singular heuristic; `_de_un_umlaut()` rightmost-umlaut helper
 
 ## CLI
 

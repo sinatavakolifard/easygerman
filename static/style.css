@@ -146,6 +146,11 @@ table.vocab thead th {
 
 table.vocab tbody tr:last-child td { border-bottom: none; }
 table.vocab .lemma { font-weight: 600; }
+table.vocab .lemma .article {
+  color: var(--fg-muted);
+  font-weight: 400;
+  margin-right: 2px;
+}
 table.vocab .example { font-size: 14px; }
 table.vocab .example-de { color: var(--fg); }
 table.vocab .example-en {

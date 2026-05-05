@@ -37,7 +37,9 @@
         <tbody>
           {% for v in vocab %}
             <tr>
-              <td class="lemma">{{ v.lemma }}</td>
+              <td class="lemma">
+                {% if v.article %}<span class="article">{{ v.article }}</span> {% endif %}{{ v.lemma }}
+              </td>
               <td>{{ v.pos }}</td>
               <td>{{ v.count }}</td>
               <td>{{ v.meaning }}</td>
