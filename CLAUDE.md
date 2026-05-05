@@ -28,9 +28,19 @@ python easy_german.py AUDIO [-o OUT] [--model SIZE] [--min-count N] [--top N] [-
 
 Default output path: `vocab-<audio-stem>.md`.
 
+## Web UI (`app.py`)
+
+Flask app that wraps the same pipeline. Run `python3 app.py` → <http://127.0.0.1:5001>. Upload an audio file, pick model / min-count / top, get the vocab as an HTML table plus the raw transcript (collapsible). Synchronous request — the browser waits for the whole pipeline.
+
+- Reuses `transcribe`, `extract_vocab`, `translate` from `easy_german.py` (no logic duplicated).
+- Default model in the form is `small` (not `medium` like the CLI) since browser waits feel longer.
+- Allowed extensions: `.wav .mp3 .m4a .ogg .flac .mp4 .webm`. Max upload 500 MB.
+- Uploaded file goes to a `tempfile.NamedTemporaryFile`, deleted in `finally`.
+- Templates in `templates/` (`index.html`, `result.html`, `error.html`); CSS in `static/style.css`.
+
 ## Dependencies (`requirements.txt`)
 
-`faster-whisper>=1.0.0`, `spacy>=3.7.0`, `wordfreq>=3.1.0`, `deep-translator>=1.11.4`. Plus the spaCy German model: `python -m spacy download de_core_news_sm`.
+`faster-whisper>=1.0.0`, `spacy>=3.7.0`, `wordfreq>=3.1.0`, `deep-translator>=1.11.4`, `flask>=3.0.0`. Plus the spaCy German model: `python -m spacy download de_core_news_sm`.
 
 ## Repo conventions
 

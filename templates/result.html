@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Vocabulary — {{ filename }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <main>
+    <p><a href="{{ url_for('index') }}">← Upload another file</a></p>
+    <h1>Vocabulary</h1>
+    <p class="meta">
+      <strong>{{ filename }}</strong>
+      &nbsp;·&nbsp; model: {{ model }}
+      &nbsp;·&nbsp; min-count: {{ min_count }}
+      &nbsp;·&nbsp; top: {{ top }}
+      &nbsp;·&nbsp; {{ vocab|length }} words
+    </p>
+
+    {% if vocab %}
+      <table class="vocab">
+        <thead>
+          <tr>
+            <th>German</th>
+            <th>POS</th>
+            <th>Count</th>
+            <th>Meaning</th>
+            <th>Example</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for v in vocab %}
+            <tr>
+              <td class="lemma">{{ v.lemma }}</td>
+              <td>{{ v.pos }}</td>
+              <td>{{ v.count }}</td>
+              <td>{{ v.meaning }}</td>
+              <td class="example">{{ v.example }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p>No vocabulary extracted. Try lowering <em>min count</em>, or check that the audio is in German.</p>
+    {% endif %}
+
+    <details class="transcript">
+      <summary>Show raw transcript</summary>
+      <pre>{{ transcript }}</pre>
+    </details>
+  </main>
+</body>
+</html>

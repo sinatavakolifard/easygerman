@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>easy-german — extract vocabulary</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <main>
+    <h1>easy-german</h1>
+    <p class="lede">Upload a German podcast or audio clip, and get back the learning-worthy vocabulary with English translations.</p>
+
+    <form action="{{ url_for('process') }}" method="post" enctype="multipart/form-data" id="upload-form">
+      <label class="file-field">
+        <span>Audio file</span>
+        <input type="file" name="audio" accept=".wav,.mp3,.m4a,.ogg,.flac,.mp4,.webm,audio/*" required>
+      </label>
+
+      <div class="row">
+        <label>
+          <span>Whisper model</span>
+          <select name="model">
+            {% for m in models %}
+              <option value="{{ m }}" {% if m == default_model %}selected{% endif %}>{{ m }}</option>
+            {% endfor %}
+          </select>
+          <small>Larger = more accurate, much slower.</small>
+        </label>
+
+        <label>
+          <span>Min count</span>
+          <input type="number" name="min_count" value="{{ default_min_count }}" min="1">
+          <small>Drop words appearing fewer times.</small>
+        </label>
+
+        <label>
+          <span>Top words</span>
+          <input type="number" name="top" value="{{ default_top }}" min="1">
+          <small>Cap on the result list size.</small>
+        </label>
+      </div>
+
+      <button type="submit">Extract vocabulary</button>
+      <p class="hint">Transcription runs on this machine and can take several minutes — the page will load when it finishes.</p>
+    </form>
+
+    <div id="processing" hidden>
+      <div class="spinner"></div>
+      <p>Processing… transcribing, lemmatizing, and translating. This page will update when it finishes.</p>
+    </div>
+  </main>
+
+  <script>
+    document.getElementById('upload-form').addEventListener('submit', function () {
+      this.querySelector('button[type=submit]').disabled = true;
+      document.getElementById('processing').hidden = false;
+    });
+  </script>
+</body>
+</html>
