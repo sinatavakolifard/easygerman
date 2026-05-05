@@ -1,0 +1,18 @@
+# Audio files
+*.wav
+*.mp3
+*.m4a
+*.ogg
+*.flac
+
+# Vocab output
+vocab*.md
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# IDE
+.vscode/
