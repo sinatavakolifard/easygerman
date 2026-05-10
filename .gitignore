@@ -17,5 +17,10 @@ venv/
 # IDE
 .vscode/
 
-# Local DB + saved audio + secret key
+# Local DB + saved audio + session signing token
 data/
+
+# Frontend build artifacts
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/

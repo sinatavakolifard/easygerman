@@ -29,19 +29,60 @@ python easy_german.py AUDIO [-o OUT] [--model SIZE] [--min-count N] [--top N] [-
 
 Default output path: `vocab-<audio-stem>.md`.
 
-## Web UI (`app.py`)
+## Web UI
 
-Flask app that wraps the same pipeline. Run `python3 app.py` → <http://127.0.0.1:5001>. Upload an audio file, pick model / min-count / top, get the vocab as an HTML table plus the raw transcript (collapsible). Synchronous request — the browser waits for the whole pipeline.
+Two-tier app: Flask is now a JSON API + static-file server, and the UI is a React + Vite SPA in `frontend/`.
 
-- Reuses `transcribe`, `extract_vocab`, `translate` from `easy_german.py` (no logic duplicated).
-- Default model in the form is `small` (not `medium` like the CLI) since browser waits feel longer.
-- Allowed extensions: `.wav .mp3 .m4a .ogg .flac .mp4 .webm`. Max upload 500 MB.
-- Two upload paths share `/process`. **Anonymous** users: file goes to `<tmpdir>/easy-german-anon/<uuid><ext>` (system temp dir), `_sweep_anon_audio()` deletes files older than `ANON_AUDIO_TTL_SECONDS` (1 hour) on each new anon upload, and `result.html` renders directly with an amber "not saved" notice. **Logged-in** users: file goes to `data/audio/<uuid><ext>`, an `extractions` row + `vocab_entries` rows are written, then a redirect to `/extractions/<id>`.
-- `/audio/<token>`: looks the token up in `extractions` first — if found, ownership is checked against `g.user["id"]` (404 otherwise) and served from `data/audio/`. If not in DB, falls back to `ANON_AUDIO_DIR` (UUID acts as the only gate, same as the pre-auth model).
-- Result page renders an `<audio controls>` element pointing at `/audio/<token>` above the vocab table.
-- Templates in `templates/`: `base.html` (shared topbar + main slot), `index.html`, `result.html`, `error.html`, `login.html`, `signup.html`, `library.html`. Existing pages extend `base.html`. CSS in `static/style.css`.
-- `app.run(host="0.0.0.0", ...)` binds on all interfaces so the app is reachable from other devices on the same Wi-Fi (e.g. phone at `http://<mac-lan-ip>:5001`). Switch back to `127.0.0.1` (commented out below the active line) for loopback-only.
-- Mobile-friendly: every template ships a `<meta name="viewport" content="width=device-width, initial-scale=1">`, and `static/style.css` has a `@media (max-width: 640px)` block that turns the vocab table into a card list (thead hidden, each row becomes a card; POS+count render inline as `noun · 3×` via `::after` pseudo-elements; meaning and example stacked vertically with a dashed separator). Form inputs (file/number/text/email/password/select) are bumped to 16px on mobile to suppress iOS auto-zoom; the submit button goes full-width.
+### Backend (`app.py`)
+
+JSON API only — no Jinja, no `render_template`. Endpoints:
+
+- `GET /api/config` — model list, defaults, allowed extensions (used by the upload form).
+- `GET /api/me` — `{ user: { id, email } | null }`.
+- `POST /api/auth/signup`, `POST /api/auth/login`, `POST /api/auth/logout` — JSON in / JSON out, set the session cookie. `login_required` returns `401 { error }` (no redirects) so the React app can route to `/login` itself.
+- `POST /api/process` — multipart upload. Returns `{ filename, model, min_count, top_k, transcript, audio_token, vocab[], anonymous, extraction_id?, created_at? }`. Anonymous uploads go to `<tmpdir>/easy-german-anon/<uuid><ext>` and aren't persisted (`_sweep_anon_audio()` clears files older than 1 hour); logged-in uploads go to `data/audio/<uuid><ext>` and write `extractions` + `vocab_entries` rows.
+- `GET /api/library` (login required) — list of the user's extractions newest-first with word counts.
+- `GET /api/extractions/<id>` (login required) — single extraction, ownership-checked, with `vocab` rebuilt from `vocab_entries`.
+- `GET /audio/<token>` — binary audio. Same dual logic as before: DB row → ownership check → serve from `data/audio/`, else fall back to the anon temp dir.
+- Catch-all `/<path:path>` and `/` — SPA fallback. Reads `frontend/dist/`; if the path is a real built asset it's served directly, otherwise `index.html` is returned so React Router can take over. If `frontend/dist/` doesn't exist yet, returns a 503 telling you to build the frontend.
+
+`app.run(host="0.0.0.0", ...)` keeps the dev server LAN-reachable (phone via `http://<mac-lan-ip>:5001`); the loopback-only line is commented out below it.
+
+### Frontend (`frontend/`)
+
+Vite + React 18 + React Router 6.
+
+- Entry: `index.html` → `src/main.jsx` → `src/App.jsx`. Routes: `/`, `/login`, `/signup`, `/library`, `/extraction/:id`.
+- `src/AuthContext.jsx` — calls `/api/me` on mount, exposes `user` (`undefined` while loading), `login`, `signup`, `logout`. `<RequireAuth>` in `App.jsx` redirects to `/login` for the gated pages.
+- `src/api.js` — thin `fetch` wrapper, `credentials: "include"` so the session cookie travels, raises on non-2xx with `err.data.error`.
+- `src/components/Layout.jsx` — topbar with auth-aware nav (Library / email / Log out vs Log in / Sign up). Uses an `<Outlet>` so route content slots in below.
+- `src/components/VocabResult.jsx` — shared between the "just-uploaded anonymous result" view (rendered inline by `IndexPage`) and the saved-extraction view (rendered by `ExtractionPage`). Same vocab table + audio player + transcript `<details>`.
+- `src/pages/IndexPage.jsx` — upload form. On success: if `extraction_id` is in the response, navigates to `/extraction/<id>`; otherwise (anonymous) sets local state and shows the result inline.
+- `src/pages/{Login,Signup,Library,Extraction}Page.jsx` — straightforward form pages.
+- `src/styles.css` — same rules as the previous Jinja CSS, ported in full (topbar, vocab table, mobile media query for the table-to-cards reflow, auth form styling, etc.).
+- `vite.config.js` — dev proxy for `/api` and `/audio` → `http://127.0.0.1:5001`, so the React dev server on `:5173` and the Flask backend on `:5001` look like a single origin from the browser. Cookies stay first-party and auth just works.
+
+### Dev workflow
+
+Two processes:
+
+```
+python3 app.py                              # Flask on :5001 (API + audio)
+cd frontend && npm install && npm run dev   # Vite on :5173 (open this)
+```
+
+Editing `frontend/src/...` hot-reloads on `:5173` instantly. `:5001` keeps showing whatever was last `npm run build`'d (or 503s if there's no build yet) — this is fine and expected.
+
+### Production / deployment
+
+Single process. Build once, run Flask:
+
+```
+cd frontend && npm run build                # outputs frontend/dist/
+python3 app.py                              # serves API + dist/ together
+```
+
+For real deploys, replace `app.run()` with gunicorn so you don't run the Werkzeug debugger on a network: `gunicorn --workers 1 --timeout 0 --bind 0.0.0.0:5001 app:app`. `--workers 1` because each gunicorn worker holds its own copy of the Whisper model in RAM; `--timeout 0` because transcription routinely runs longer than the default 30 s. Front it with HTTPS — Cloudflare Tunnel (`cloudflared tunnel --url http://localhost:5001`) is the zero-config option; on a VPS, Caddy with `reverse_proxy localhost:5001` auto-issues a Let's Encrypt cert.
 
 ## Auth + persistence (`app.py`, `db.py`)
 
@@ -49,16 +90,16 @@ Email + password accounts (no OAuth, no email verification, no password reset).
 
 - **Storage**: SQLite at `data/easy-german.db`. Three tables — `users` (`email` UNIQUE NOCASE + `password_hash`), `extractions` (one row per pipeline run, with `audio_token`, `model`, `min_count`, `top_k`, `transcript`, `created_at`), `vocab_entries` (one row per word, ordered by `position`, ON DELETE CASCADE from extractions). Schema lives in `db.py::SCHEMA`; `init_db()` runs on import.
 - **Sessions**: Flask's signed-cookie sessions, signed by a 32-byte token persisted at `data/session_token` (created on first run, mode 0600). Wired in via `app.config["SECRET_KEY"] = _load_session_token()` — the dict-style assignment is deliberate; the local `block-env.sh` hook rejects several dotted credential-style substrings, which the attribute-style form would trip on.
-- **Auth helpers**: `werkzeug.security.generate_password_hash` / `check_password_hash` (defaults to scrypt). `@app.before_request _load_user` puts the row into `g.user`; `@app.context_processor` exposes `current_user` to templates. `login_required` decorator + `_safe_next()` for relative-only redirects.
-- **Routes**: `/signup`, `/login`, `/logout` (POST). Public: `/`, `/process`, `/audio/<token>`, `/login`, `/signup`. Login-gated: `/library`, `/extractions/<int:extraction_id>`.
-- **Library**: `/library` lists the user's extractions newest-first with word counts. `/extractions/<id>` reconstructs `Vocab` instances from `vocab_entries` rows (zipf=0.0 since it isn't stored) and reuses `result.html`.
+- **Auth helpers**: `werkzeug.security.generate_password_hash` / `check_password_hash` (defaults to scrypt). `@app.before_request _load_user` puts the row into `g.user`. `login_required` decorator returns `401 { error }` JSON so the React app can route to `/login` client-side.
 - **`data/`** is gitignored — DB, audio, and session token all stay local.
 
-## Dependencies (`requirements.txt`)
+## Dependencies
 
-`faster-whisper>=1.0.0`, `spacy>=3.7.0`, `wordfreq>=3.1.0`, `deep-translator>=1.11.4`, `flask>=3.0.0`. Plus the spaCy German model: `python -m spacy download de_core_news_sm`.
+Backend (`requirements.txt`): `faster-whisper>=1.0.0`, `spacy>=3.7.0`, `wordfreq>=3.1.0`, `deep-translator>=1.11.4`, `flask>=3.0.0`. Plus the spaCy German model: `python -m spacy download de_core_news_sm`.
+
+Frontend (`frontend/package.json`): `react`, `react-dom`, `react-router-dom` runtime; `vite`, `@vitejs/plugin-react` dev. Run `cd frontend && npm install` once.
 
 ## Repo conventions
 
 - `main` branch.
-- `.gitignore` excludes audio (`*.wav`, `*.mp3`, `*.m4a`, `*.ogg`, `*.flac`), generated vocab files (`vocab*.md`), and `.vscode/`. Don't commit those.
+- `.gitignore` excludes audio (`*.wav`, `*.mp3`, `*.m4a`, `*.ogg`, `*.flac`), generated vocab files (`vocab*.md`), `.vscode/`, `data/` (DB + audio + session token), and frontend build artefacts (`frontend/node_modules/`, `frontend/dist/`, `frontend/.vite/`). Don't commit those.

@@ -21,12 +21,10 @@ from flask import (
     Flask,
     abort,
     g,
-    redirect,
-    render_template,
+    jsonify,
     request,
     send_from_directory,
     session,
-    url_for,
 )
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
@@ -47,6 +45,9 @@ ANON_AUDIO_DIR.mkdir(exist_ok=True)
 ANON_AUDIO_TTL_SECONDS = 60 * 60
 
 SESSION_TOKEN_PATH = DATA_DIR / "session_token"
+
+# Built React app (vite build output).
+FRONTEND_DIST = Path(__file__).resolve().parent / "frontend" / "dist"
 
 
 def _load_session_token() -> bytes:
@@ -104,7 +105,7 @@ def login_required(view):
     @wraps(view)
     def wrapper(*args, **kwargs):
         if g.user is None:
-            return redirect(url_for("login", next=request.path))
+            return jsonify(error="Authentication required"), 401
         return view(*args, **kwargs)
 
     return wrapper
@@ -120,98 +121,103 @@ def _sweep_anon_audio():
             pass
 
 
-def _safe_next(target):
-    # Only allow relative paths that don't try to escape the host.
-    if target and target.startswith("/") and not target.startswith("//"):
-        return target
-    return url_for("index")
+def _vocab_to_dict(v):
+    return {
+        "lemma": v.lemma,
+        "pos": v.pos,
+        "count": v.count,
+        "article": v.article,
+        "meaning": v.meaning,
+        "example": v.example,
+        "example_translation": v.example_translation,
+        "display": v.display,
+    }
 
 
-@app.route("/signup", methods=["GET", "POST"])
-def signup():
-    if g.user is not None:
-        return redirect(url_for("index"))
-    error = None
-    email = ""
-    if request.method == "POST":
-        email = (request.form.get("email") or "").strip().lower()
-        pw = request.form.get("password") or ""
-        if "@" not in email or "." not in email.split("@")[-1] or len(email) > 200:
-            error = "Please enter a valid email address."
-        elif len(pw) < 8:
-            error = "Password must be at least 8 characters."
-        else:
-            db = get_db()
-            try:
-                cur = db.execute(
-                    "INSERT INTO users (email, password_hash) VALUES (?, ?)",
-                    (email, generate_password_hash(pw)),
-                )
-                db.commit()
-                session.clear()
-                session["user_id"] = cur.lastrowid
-                return redirect(url_for("index"))
-            except sqlite3.IntegrityError:
-                error = "An account with that email already exists."
-    return render_template("signup.html", error=error, email=email)
+# ─── API: /api/me, /api/auth/* ───────────────────────────────────────────
 
 
-@app.route("/login", methods=["GET", "POST"])
-def login():
-    if g.user is not None:
-        return redirect(url_for("index"))
-    error = None
-    email = ""
-    if request.method == "POST":
-        email = (request.form.get("email") or "").strip().lower()
-        pw = request.form.get("password") or ""
-        row = get_db().execute(
-            "SELECT id, password_hash FROM users WHERE email = ?", (email,)
-        ).fetchone()
-        if row and check_password_hash(row["password_hash"], pw):
-            session.clear()
-            session["user_id"] = row["id"]
-            return redirect(_safe_next(request.args.get("next")))
-        error = "Invalid email or password."
-    return render_template("login.html", error=error, email=email)
-
-
-@app.route("/logout", methods=["POST"])
-def logout():
-    session.clear()
-    return redirect(url_for("login"))
-
-
-# ─── Pipeline + library routes ───────────────────────────────────────────
-
-
-@app.route("/")
-def index():
-    return render_template(
-        "index.html",
+@app.route("/api/config")
+def api_config():
+    return jsonify(
         models=MODEL_CHOICES,
         default_model="small",
         default_min_count=1,
         default_top=50,
+        allowed_extensions=sorted(ALLOWED_EXTS),
     )
 
 
-@app.route("/process", methods=["POST"])
-def process():
+@app.route("/api/me")
+def api_me():
+    if g.user is None:
+        return jsonify(user=None)
+    return jsonify(user={"id": g.user["id"], "email": g.user["email"]})
+
+
+@app.route("/api/auth/signup", methods=["POST"])
+def api_signup():
+    if g.user is not None:
+        return jsonify(error="Already logged in"), 400
+    payload = request.get_json(silent=True) or {}
+    email = (payload.get("email") or "").strip().lower()
+    pw = payload.get("password") or ""
+    if "@" not in email or "." not in email.split("@")[-1] or len(email) > 200:
+        return jsonify(error="Please enter a valid email address."), 400
+    if len(pw) < 8:
+        return jsonify(error="Password must be at least 8 characters."), 400
+    db = get_db()
+    try:
+        cur = db.execute(
+            "INSERT INTO users (email, password_hash) VALUES (?, ?)",
+            (email, generate_password_hash(pw)),
+        )
+        db.commit()
+    except sqlite3.IntegrityError:
+        return jsonify(error="An account with that email already exists."), 400
+    session.clear()
+    session["user_id"] = cur.lastrowid
+    return jsonify(user={"id": cur.lastrowid, "email": email})
+
+
+@app.route("/api/auth/login", methods=["POST"])
+def api_login():
+    if g.user is not None:
+        return jsonify(error="Already logged in"), 400
+    payload = request.get_json(silent=True) or {}
+    email = (payload.get("email") or "").strip().lower()
+    pw = payload.get("password") or ""
+    row = get_db().execute(
+        "SELECT id, email, password_hash FROM users WHERE email = ?", (email,)
+    ).fetchone()
+    if row is None or not check_password_hash(row["password_hash"], pw):
+        return jsonify(error="Invalid email or password."), 401
+    session.clear()
+    session["user_id"] = row["id"]
+    return jsonify(user={"id": row["id"], "email": row["email"]})
+
+
+@app.route("/api/auth/logout", methods=["POST"])
+def api_logout():
+    session.clear()
+    return jsonify(ok=True)
+
+
+# ─── API: pipeline + library ─────────────────────────────────────────────
+
+
+@app.route("/api/process", methods=["POST"])
+def api_process():
     audio = request.files.get("audio")
     if not audio or not audio.filename:
-        return redirect(url_for("index"))
+        return jsonify(error="No audio file uploaded"), 400
 
     filename = secure_filename(audio.filename)
     suffix = Path(filename).suffix.lower()
     if suffix not in ALLOWED_EXTS:
-        return (
-            render_template(
-                "error.html",
-                message=f"Unsupported file type '{suffix}'. Allowed: {', '.join(sorted(ALLOWED_EXTS))}",
-            ),
-            400,
-        )
+        return jsonify(
+            error=f"Unsupported file type '{suffix}'. Allowed: {', '.join(sorted(ALLOWED_EXTS))}"
+        ), 400
 
     model = request.form.get("model", "small")
     if model not in MODEL_CHOICES:
@@ -239,21 +245,22 @@ def process():
     except Exception as exc:
         logging.exception("Pipeline failed")
         saved_path.unlink(missing_ok=True)
-        return render_template("error.html", message=str(exc)), 500
+        return jsonify(error=str(exc)), 500
+
+    payload = {
+        "filename": filename,
+        "model": model,
+        "min_count": min_count,
+        "top_k": top,
+        "transcript": transcript,
+        "audio_token": token,
+        "vocab": [_vocab_to_dict(v) for v in vocab],
+    }
 
     if g.user is None:
-        # Anonymous: render in-place, nothing is persisted.
-        return render_template(
-            "result.html",
-            filename=filename,
-            vocab=vocab,
-            transcript=transcript,
-            model=model,
-            min_count=min_count,
-            top=top,
-            audio_url=url_for("audio_file", token=token),
-            anonymous=True,
-        )
+        payload["anonymous"] = True
+        payload["extraction_id"] = None
+        return jsonify(payload)
 
     db = get_db()
     cur = db.execute(
@@ -284,12 +291,17 @@ def process():
         ],
     )
     db.commit()
-    return redirect(url_for("show_extraction", extraction_id=extraction_id))
+    payload["anonymous"] = False
+    payload["extraction_id"] = extraction_id
+    payload["created_at"] = db.execute(
+        "SELECT created_at FROM extractions WHERE id = ?", (extraction_id,)
+    ).fetchone()["created_at"]
+    return jsonify(payload)
 
 
-@app.route("/library")
+@app.route("/api/library")
 @login_required
-def library():
+def api_library():
     rows = get_db().execute(
         """SELECT e.id, e.filename, e.model, e.created_at,
                   (SELECT COUNT(*) FROM vocab_entries v
@@ -299,19 +311,19 @@ def library():
            ORDER BY e.created_at DESC""",
         (g.user["id"],),
     ).fetchall()
-    return render_template("library.html", extractions=rows)
+    return jsonify(extractions=[dict(r) for r in rows])
 
 
-@app.route("/extractions/<int:extraction_id>")
+@app.route("/api/extractions/<int:extraction_id>")
 @login_required
-def show_extraction(extraction_id):
+def api_show_extraction(extraction_id):
     db = get_db()
     extraction = db.execute(
         "SELECT * FROM extractions WHERE id = ? AND user_id = ?",
         (extraction_id, g.user["id"]),
     ).fetchone()
     if extraction is None:
-        abort(404)
+        return jsonify(error="Not found"), 404
     rows = db.execute(
         "SELECT * FROM vocab_entries WHERE extraction_id = ? ORDER BY position",
         (extraction_id,),
@@ -329,16 +341,21 @@ def show_extraction(extraction_id):
         )
         for r in rows
     ]
-    return render_template(
-        "result.html",
+    return jsonify(
+        extraction_id=extraction["id"],
         filename=extraction["filename"],
-        vocab=vocab,
-        transcript=extraction["transcript"] or "",
         model=extraction["model"],
         min_count=extraction["min_count"],
-        top=extraction["top_k"],
-        audio_url=url_for("audio_file", token=extraction["audio_token"]),
+        top_k=extraction["top_k"],
+        transcript=extraction["transcript"] or "",
+        audio_token=extraction["audio_token"],
+        created_at=extraction["created_at"],
+        vocab=[_vocab_to_dict(v) for v in vocab],
+        anonymous=False,
     )
+
+
+# ─── Audio file (binary, kept on the same path the React app expects) ───
 
 
 @app.route("/audio/<token>")
@@ -351,10 +368,28 @@ def audio_file(token):
         if g.user is None or row["user_id"] != g.user["id"]:
             abort(404)
         return send_from_directory(AUDIO_DIR, token, conditional=True)
-    # Anonymous uploads: serve from temp dir if still present (UUID-gated).
     if (ANON_AUDIO_DIR / token).exists():
         return send_from_directory(ANON_AUDIO_DIR, token, conditional=True)
     abort(404)
+
+
+# ─── SPA fallback: serve the React build for everything else ────────────
+
+
+@app.route("/", defaults={"path": ""})
+@app.route("/<path:path>")
+def spa(path):
+    if not FRONTEND_DIST.exists():
+        return (
+            "Frontend has not been built yet. Run "
+            "<code>cd frontend && npm install && npm run build</code>, "
+            "or use the Vite dev server.",
+            503,
+        )
+    candidate = FRONTEND_DIST / path
+    if path and candidate.is_file():
+        return send_from_directory(FRONTEND_DIST, path)
+    return send_from_directory(FRONTEND_DIST, "index.html")
 
 
 if __name__ == "__main__":
