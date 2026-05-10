@@ -1,5 +1,6 @@
 import { Link, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../AuthContext.jsx";
+import ThemeToggle from "./ThemeToggle.jsx";
 
 export default function Layout() {
   const { user, logout } = useAuth();
@@ -18,6 +19,7 @@ export default function Layout() {
           easy-german
         </Link>
         <nav className="topbar-nav">
+          <ThemeToggle />
           {user ? (
             <>
               <Link to="/library">Library</Link>

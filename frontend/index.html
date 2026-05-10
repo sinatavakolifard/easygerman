@@ -4,6 +4,15 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>easy-german</title>
+    <script>
+      // Apply theme before stylesheet/render to prevent a light flash on load.
+      (function () {
+        var saved = null;
+        try { saved = localStorage.getItem("easy-german-theme"); } catch (e) {}
+        var theme = saved === "light" || saved === "dark" ? saved : "dark";
+        document.documentElement.dataset.theme = theme;
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -1,4 +1,26 @@
+/* Dark is the default. The user can switch via the topbar toggle, which sets
+   data-theme="light" on the <html> element. An inline script in index.html
+   applies the saved/default theme before stylesheets load to avoid a flash. */
 :root {
+  --fg: #ece8df;
+  --fg-muted: #9a948a;
+  --bg: #14120e;
+  --card: #1e1b15;
+  --border: #2f2a22;
+  --accent: #e07a1f;
+  --accent-hover: #f08c2c;
+  --error-bg: #2a1414;
+  --error-fg: #f4a3a3;
+  --thead-bg: #29241c;
+  --notice-bg: #2a200d;
+  --notice-border: #4d3a16;
+  --notice-fg: #e0a560;
+  --input-bg: #18150f;
+  --focus-ring: rgba(224, 122, 31, 0.28);
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] {
   --fg: #1a1a1a;
   --fg-muted: #5a5a5a;
   --bg: #fafaf7;
@@ -8,6 +30,13 @@
   --accent-hover: #8f4900;
   --error-bg: #fff1f1;
   --error-fg: #8a1f1f;
+  --thead-bg: #f3f1ea;
+  --notice-bg: #fff7ed;
+  --notice-border: #f3d9b8;
+  --notice-fg: #7a4a00;
+  --input-bg: #ffffff;
+  --focus-ring: rgba(179, 92, 0, 0.15);
+  color-scheme: light;
 }
 
 * { box-sizing: border-box; }
@@ -81,15 +110,35 @@ main {
 }
 .topbar-cta:hover { background: var(--accent-hover); color: white; }
 
+.theme-toggle {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--fg);
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 6px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.theme-toggle:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.theme-toggle svg { width: 16px; height: 16px; display: block; }
+
 .anon-notice {
-  background: #fff7ed;
-  border: 1px solid #f3d9b8;
-  color: #7a4a00;
+  background: var(--notice-bg);
+  border: 1px solid var(--notice-border);
+  color: var(--notice-fg);
   padding: 10px 14px;
   border-radius: 8px;
   font-size: 14px;
   margin: 0 0 16px;
 }
+.anon-notice a { color: var(--notice-fg); text-decoration: underline; }
 
 h1 {
   margin: 0 0 8px;
@@ -140,7 +189,8 @@ select {
   padding: 8px 10px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: white;
+  background: var(--input-bg);
+  color: var(--fg);
 }
 input[type=text]:focus,
 input[type=email]:focus,
@@ -149,7 +199,7 @@ input[type=number]:focus,
 select:focus {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(179, 92, 0, 0.15);
+  box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
 .row {
@@ -212,7 +262,7 @@ table.vocab td {
 }
 
 table.vocab thead th {
-  background: #f3f1ea;
+  background: var(--thead-bg);
   font-size: 13px;
   text-transform: uppercase;
   letter-spacing: 0.04em;

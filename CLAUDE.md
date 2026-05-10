@@ -59,7 +59,8 @@ Vite + React 18 + React Router 6.
 - `src/components/VocabResult.jsx` — shared between the "just-uploaded anonymous result" view (rendered inline by `IndexPage`) and the saved-extraction view (rendered by `ExtractionPage`). Same vocab table + audio player + transcript `<details>`.
 - `src/pages/IndexPage.jsx` — upload form. On success: if `extraction_id` is in the response, navigates to `/extraction/<id>`; otherwise (anonymous) sets local state and shows the result inline.
 - `src/pages/{Login,Signup,Library,Extraction}Page.jsx` — straightforward form pages.
-- `src/styles.css` — same rules as the previous Jinja CSS, ported in full (topbar, vocab table, mobile media query for the table-to-cards reflow, auth form styling, etc.).
+- `src/styles.css` — same rules as the previous Jinja CSS, ported in full (topbar, vocab table, mobile media query for the table-to-cards reflow, auth form styling, etc.). All colours go through CSS variables; the default `:root` block is the dark palette and `:root[data-theme="light"]` overrides for light mode.
+- `src/components/ThemeToggle.jsx` — sun/moon SVG button in the topbar that flips `<html data-theme>` between `"dark"` and `"light"` and persists the choice to `localStorage["easy-german-theme"]`. An inline script in `index.html` reads that value (defaulting to `"dark"`) and sets `data-theme` *before* the stylesheet loads, so there's no light-flash on first paint.
 - `vite.config.js` — dev proxy for `/api` and `/audio` → `http://127.0.0.1:5001`, so the React dev server on `:5173` and the Flask backend on `:5001` look like a single origin from the browser. Cookies stay first-party and auth just works.
 
 ### Dev workflow
