@@ -39,6 +39,8 @@ Flask app that wraps the same pipeline. Run `python3 app.py` → <http://127.0.0
 - Uploaded audio is saved to `<tmpdir>/easy-german-uploads/<uuid><ext>` (kept after processing so the result page can play it back) and served via `/audio/<token>` using `send_from_directory`. `_sweep_old_uploads()` runs on each upload and deletes files older than `UPLOAD_TTL_SECONDS` (1 hour).
 - Result page renders an `<audio controls>` element pointing at `/audio/<token>` above the vocab table.
 - Templates in `templates/` (`index.html`, `result.html`, `error.html`); CSS in `static/style.css`.
+- `app.run(host="0.0.0.0", ...)` binds on all interfaces so the app is reachable from other devices on the same Wi-Fi (e.g. phone at `http://<mac-lan-ip>:5001`). Switch back to `127.0.0.1` (commented out below the active line) for loopback-only.
+- Mobile-friendly: every template ships a `<meta name="viewport" content="width=device-width, initial-scale=1">`, and `static/style.css` has a `@media (max-width: 640px)` block that turns the vocab table into a card list (thead hidden, each row becomes a card; POS+count render inline as `noun · 3×` via `::after` pseudo-elements; meaning and example stacked vertically with a dashed separator). Form inputs are bumped to 16px on mobile to suppress iOS auto-zoom; the submit button goes full-width.
 
 ## Dependencies (`requirements.txt`)
 

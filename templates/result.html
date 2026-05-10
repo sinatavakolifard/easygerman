@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Vocabulary — {{ filename }}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
@@ -40,9 +41,9 @@
               <td class="lemma">
                 {% if v.article %}<span class="article">{{ v.article }}</span> {% endif %}{{ v.lemma }}
               </td>
-              <td>{{ v.pos }}</td>
-              <td>{{ v.count }}</td>
-              <td>{{ v.meaning }}</td>
+              <td class="pos">{{ v.pos }}</td>
+              <td class="count">{{ v.count }}</td>
+              <td class="meaning">{{ v.meaning }}</td>
               <td class="example">
                 <div class="example-de">{{ v.example }}</div>
                 {% if v.example_translation %}
