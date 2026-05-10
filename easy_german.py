@@ -25,8 +25,8 @@ from wordfreq import zipf_frequency
 
 import spacy
 
-KEEP_POS = {"NOUN", "VERB", "ADJ", "ADV", "PROPN"}
-POS_LABEL = {"NOUN": "noun", "VERB": "verb", "ADJ": "adj", "ADV": "adv", "PROPN": "name"}
+KEEP_POS = {"NOUN", "VERB", "ADJ", "ADV"}
+POS_LABEL = {"NOUN": "noun", "VERB": "verb", "ADJ": "adj", "ADV": "adv"}
 
 # Map spaCy's morphological Gender feature to the matching nominative article.
 GENDER_ARTICLE = {"Masc": "der", "Fem": "die", "Neut": "das"}
@@ -100,12 +100,22 @@ def try_singularize(plural: str, gender: str = "") -> str:
     return plural
 
 # Words with a Zipf frequency at or above this are too common to be worth
-# learning (e.g. "haben", "machen", "gut"). Zipf 5.0 is roughly the top ~3000
-# most common words in everyday text.
-COMMON_ZIPF_THRESHOLD = 5.0
+# learning. Default targets B2+ vocab. Rough mapping (zipf is a log scale):
+#   5.5 ≈ A1+, 5.0 ≈ A2+, 4.5 ≈ B1+, 4.0 ≈ B2+ (default), 3.5 ≈ C1+.
+COMMON_ZIPF_THRESHOLD = 4.0
 
 # Below this Zipf, words are so rare they may be names, typos, or noise.
 RARE_ZIPF_FLOOR = 1.5
+
+# Named CEFR-ish difficulty presets. Keys are exposed in the web UI; values
+# are the zipf upper-bound (any word more common than this is filtered out).
+DIFFICULTY_LEVELS = {
+    "A2+": 5.0,
+    "B1+": 4.5,
+    "B2+": 4.0,
+    "C1+": 3.5,
+}
+DEFAULT_LEVEL = "B2+"
 
 
 @dataclass
@@ -149,7 +159,12 @@ def load_spacy() -> "spacy.language.Language":
         )
 
 
-def extract_vocab(transcript: str, min_count: int, top_k: int) -> list[Vocab]:
+def extract_vocab(
+    transcript: str,
+    min_count: int,
+    top_k: int,
+    max_zipf: float = COMMON_ZIPF_THRESHOLD,
+) -> list[Vocab]:
     nlp = load_spacy()
     doc = nlp(transcript)
 
@@ -188,8 +203,16 @@ def extract_vocab(transcript: str, min_count: int, top_k: int) -> list[Vocab]:
 
     vocab: list[Vocab] = []
     for (lemma, pos), count in counts.items():
-        zipf = zipf_frequency(lemma.lower(), "de")
-        if zipf >= COMMON_ZIPF_THRESHOLD or zipf < RARE_ZIPF_FLOOR:
+        lower = lemma.lower()
+        zipf = zipf_frequency(lower, "de")
+        if zipf >= max_zipf or zipf < RARE_ZIPF_FLOOR:
+            continue
+        # Drop English bleed-through (intro words like "Easy", "German", brand
+        # names) — if the word is markedly more common in English than German
+        # and is a real English word, it's probably not the German vocab the
+        # user wants to learn.
+        zipf_en = zipf_frequency(lower, "en")
+        if zipf_en >= 4.0 and zipf_en - zipf >= 1.0:
             continue
         if count < min_count:
             continue
@@ -287,6 +310,24 @@ def main() -> None:
         help="Maximum number of words to keep (default: 50)",
     )
     parser.add_argument(
+        "--max-zipf",
+        type=float,
+        default=COMMON_ZIPF_THRESHOLD,
+        help=(
+            "Drop words at or above this Zipf frequency (default %(default)s ≈ B2+). "
+            "Use 4.5 for B1+, 3.5 for C1+."
+        ),
+    )
+    parser.add_argument(
+        "--level",
+        choices=list(DIFFICULTY_LEVELS),
+        default=None,
+        help=(
+            "CEFR-ish preset that overrides --max-zipf: "
+            + ", ".join(f"{k}={v}" for k, v in DIFFICULTY_LEVELS.items())
+        ),
+    )
+    parser.add_argument(
         "--save-transcript",
         type=Path,
         help="Optional path to save the raw German transcript",
@@ -311,7 +352,13 @@ def main() -> None:
         args.save_transcript.write_text(transcript, encoding="utf-8")
         logging.info("Saved transcript to %s", args.save_transcript)
 
-    vocab = extract_vocab(transcript, min_count=args.min_count, top_k=args.top)
+    max_zipf = DIFFICULTY_LEVELS[args.level] if args.level else args.max_zipf
+    vocab = extract_vocab(
+        transcript,
+        min_count=args.min_count,
+        top_k=args.top,
+        max_zipf=max_zipf,
+    )
     if not vocab:
         sys.exit("No vocabulary extracted. Try lowering --min-count or check the audio.")
 

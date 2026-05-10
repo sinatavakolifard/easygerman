@@ -9,6 +9,13 @@ const FALLBACK_CONFIG = {
   default_model: "small",
   default_min_count: 1,
   default_top: 50,
+  levels: [
+    { name: "A2+", max_zipf: 5.0 },
+    { name: "B1+", max_zipf: 4.5 },
+    { name: "B2+", max_zipf: 4.0 },
+    { name: "C1+", max_zipf: 3.5 },
+  ],
+  default_level: "B2+",
 };
 
 export default function IndexPage() {
@@ -88,6 +95,18 @@ export default function IndexPage() {
               ))}
             </select>
             <small>Larger = more accurate, much slower.</small>
+          </label>
+
+          <label>
+            <span>Difficulty</span>
+            <select name="level" defaultValue={config.default_level}>
+              {config.levels.map((l) => (
+                <option key={l.name} value={l.name}>
+                  {l.name}
+                </option>
+              ))}
+            </select>
+            <small>Skip words that are easier than this.</small>
           </label>
 
           <label>

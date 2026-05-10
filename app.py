@@ -30,7 +30,14 @@ from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 
 from db import DATA_DIR, connect as db_connect, init_db
-from easy_german import Vocab, extract_vocab, transcribe, translate
+from easy_german import (
+    DEFAULT_LEVEL,
+    DIFFICULTY_LEVELS,
+    Vocab,
+    extract_vocab,
+    transcribe,
+    translate,
+)
 
 ALLOWED_EXTS = {".wav", ".mp3", ".m4a", ".ogg", ".flac", ".mp4", ".webm"}
 MODEL_CHOICES = ["tiny", "base", "small", "medium", "large-v3"]
@@ -144,6 +151,8 @@ def api_config():
         default_model="small",
         default_min_count=1,
         default_top=50,
+        levels=[{"name": k, "max_zipf": v} for k, v in DIFFICULTY_LEVELS.items()],
+        default_level=DEFAULT_LEVEL,
         allowed_extensions=sorted(ALLOWED_EXTS),
     )
 
@@ -227,6 +236,8 @@ def api_process():
         top = max(1, int(request.form.get("top", "50")))
     except ValueError:
         min_count, top = 1, 50
+    level = request.form.get("level", DEFAULT_LEVEL)
+    max_zipf = DIFFICULTY_LEVELS.get(level, DIFFICULTY_LEVELS[DEFAULT_LEVEL])
 
     token = f"{uuid.uuid4().hex}{suffix}"
     if g.user is None:
@@ -239,7 +250,9 @@ def api_process():
 
     try:
         transcript = transcribe(saved_path, model_size=model)
-        vocab = extract_vocab(transcript, min_count=min_count, top_k=top)
+        vocab = extract_vocab(
+            transcript, min_count=min_count, top_k=top, max_zipf=max_zipf
+        )
         if vocab:
             translate(vocab)
     except Exception as exc:
@@ -353,6 +366,63 @@ def api_show_extraction(extraction_id):
         vocab=[_vocab_to_dict(v) for v in vocab],
         anonymous=False,
     )
+
+
+@app.route("/api/extractions/<int:extraction_id>/reextract", methods=["POST"])
+@login_required
+def api_reextract(extraction_id):
+    db = get_db()
+    extraction = db.execute(
+        "SELECT * FROM extractions WHERE id = ? AND user_id = ?",
+        (extraction_id, g.user["id"]),
+    ).fetchone()
+    if extraction is None:
+        return jsonify(error="Not found"), 404
+
+    transcript = extraction["transcript"] or ""
+    if not transcript.strip():
+        return jsonify(error="No transcript stored for this extraction"), 400
+
+    payload = request.get_json(silent=True) or {}
+    level = payload.get("level", DEFAULT_LEVEL)
+    max_zipf = DIFFICULTY_LEVELS.get(level, DIFFICULTY_LEVELS[DEFAULT_LEVEL])
+    try:
+        min_count = max(1, int(payload.get("min_count", extraction["min_count"])))
+        top = max(1, int(payload.get("top", extraction["top_k"])))
+    except (ValueError, TypeError):
+        min_count = extraction["min_count"]
+        top = extraction["top_k"]
+
+    try:
+        vocab = extract_vocab(
+            transcript, min_count=min_count, top_k=top, max_zipf=max_zipf
+        )
+        if vocab:
+            translate(vocab)
+    except Exception as exc:
+        logging.exception("Re-extract failed")
+        return jsonify(error=str(exc)), 500
+
+    db.execute("DELETE FROM vocab_entries WHERE extraction_id = ?", (extraction_id,))
+    db.executemany(
+        """INSERT INTO vocab_entries
+              (extraction_id, position, lemma, pos, count, article,
+               meaning, example, example_translation)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        [
+            (
+                extraction_id, i, v.lemma, v.pos, v.count, v.article,
+                v.meaning, v.example, v.example_translation,
+            )
+            for i, v in enumerate(vocab)
+        ],
+    )
+    db.execute(
+        "UPDATE extractions SET min_count = ?, top_k = ? WHERE id = ?",
+        (min_count, top, extraction_id),
+    )
+    db.commit()
+    return api_show_extraction(extraction_id)
 
 
 # ─── Audio file (binary, kept on the same path the React app expects) ───

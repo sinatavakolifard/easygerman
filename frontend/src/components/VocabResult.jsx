@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 
-export default function VocabResult({ data, currentUser }) {
+export default function VocabResult({ data, currentUser, controls }) {
   if (!data) return null;
   const {
     filename,
@@ -39,6 +39,8 @@ export default function VocabResult({ data, currentUser }) {
           in your library.
         </p>
       )}
+
+      {controls}
 
       {audioUrl && (
         <audio className="player" controls preload="metadata" src={audioUrl}>

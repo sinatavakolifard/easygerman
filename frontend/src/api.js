@@ -45,4 +45,9 @@ export const api = {
     jsonFetch("/api/process", { method: "POST", body: formData }),
   library: () => jsonFetch("/api/library"),
   extraction: (id) => jsonFetch(`/api/extractions/${id}`),
+  reextract: (id, params) =>
+    jsonFetch(`/api/extractions/${id}/reextract`, {
+      method: "POST",
+      body: JSON.stringify(params),
+    }),
 };

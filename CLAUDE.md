@@ -6,9 +6,10 @@ CLI tool that extracts learning-worthy German vocabulary from podcast audio and 
 
 1. **Transcribe** — `faster-whisper` (German, VAD filter on). Default model: `medium`. `transcribe()` joins all segment text into one string.
 2. **Tokenize / lemmatize** — spaCy `de_core_news_sm`. Loaded lazily by `load_spacy()`; exits with install instructions if missing. For nouns, `tok.morph.get("Gender")` is collected and aggregated per lemma so the most common gender wins (mapped to `der`/`die`/`das` via `GENDER_ARTICLE`). Plurals spaCy fails to reduce (typically compound nouns like `Mineralölkonzerne`) get post-processed by `try_singularize()` — only triggered when `Number=Plur` *and* `tok.lemma_ == tok.text` so already-correct singulars are left alone. The heuristic strips common plural suffixes (`nen`, `en`, `er`, `n`, `e`, `s`), tries un-umlauted variants (rightmost umlaut only — preserves earlier umlauts in compounds like `Hörbücher`), prefers wordfreq-recognised candidates, and falls back to gender-aware suffix rules for compounds wordfreq doesn't index. Side benefit: singular and plural occurrences of the same noun collapse into one `Vocab` entry.
-3. **Filter** — keep POS in `{NOUN, VERB, ADJ, ADV, PROPN}`; drop stopwords/punct/space and tokens whose lemma isn't alpha (hyphens allowed). Then by `wordfreq.zipf_frequency(lemma, "de")`:
-   - drop if `zipf >= 5.0` (too common, ~top 3000)
+3. **Filter** — keep POS in `{NOUN, VERB, ADJ, ADV}` (no `PROPN` — proper nouns are mostly names and English bleed-through like "Easy German"). Drop stopwords/punct/space and tokens whose lemma isn't alpha (hyphens allowed). Then by `wordfreq.zipf_frequency(lemma, "de")`:
+   - drop if `zipf >= max_zipf` (default 4.0 ≈ B2+; see `DIFFICULTY_LEVELS`: A2+→5.0, B1+→4.5, B2+→4.0, C1+→3.5)
    - drop if `zipf < 1.5` (likely names/typos/noise)
+   - drop if `zipf_frequency(lemma, "en") >= 4.0 and zipf_en - zipf_de >= 1.0` — English bleed-through filter ("Easy", "today", brand names that survive the POS cut)
    - drop if episode count < `--min-count` (default 1)
 4. **Rank** — `score = count * max(0, 7.5 - zipf)` → frequent in episode, rare in general. Take top `--top` (default 50), then re-sort by first-occurrence index so the output follows the audio's order.
 5. **Translate** — `deep-translator` GoogleTranslator. `_translate_batch()` helper does batch-with-one-by-one fallback (empty string on per-item failure). Called twice per run: once for lemmas (→ `Vocab.meaning`), once for example sentences (→ `Vocab.example_translation`) so the user gets the lemma translated in context.
@@ -16,16 +17,20 @@ CLI tool that extracts learning-worthy German vocabulary from podcast audio and 
 
 ## Key constants / data
 
-- `KEEP_POS`, `POS_LABEL`, `GENDER_ARTICLE`, `PLURAL_SUFFIXES`
-- `COMMON_ZIPF_THRESHOLD = 5.0`, `RARE_ZIPF_FLOOR = 1.5`
+- `KEEP_POS`, `POS_LABEL`, `GENDER_ARTICLE`, `PLURAL_SUFFIXES`, `DIFFICULTY_LEVELS`, `DEFAULT_LEVEL`
+- `COMMON_ZIPF_THRESHOLD = 4.0` (default upper bound, ≈ B2+), `RARE_ZIPF_FLOOR = 1.5`
 - `Vocab` dataclass (incl. `meaning`, `example`, `example_translation`, `article`, `display` property, `score` property)
 - `try_singularize()` plural→singular heuristic; `_de_un_umlaut()` rightmost-umlaut helper
 
 ## CLI
 
 ```
-python easy_german.py AUDIO [-o OUT] [--model SIZE] [--min-count N] [--top N] [--save-transcript PATH] [-v]
+python easy_german.py AUDIO [-o OUT] [--model SIZE] [--min-count N] [--top N]
+                     [--max-zipf F | --level {A2+,B1+,B2+,C1+}]
+                     [--save-transcript PATH] [-v]
 ```
+
+`--level` is a CEFR-ish preset that sets `--max-zipf` for you; either flag works.
 
 Default output path: `vocab-<audio-stem>.md`.
 
@@ -43,6 +48,7 @@ JSON API only — no Jinja, no `render_template`. Endpoints:
 - `POST /api/process` — multipart upload. Returns `{ filename, model, min_count, top_k, transcript, audio_token, vocab[], anonymous, extraction_id?, created_at? }`. Anonymous uploads go to `<tmpdir>/easy-german-anon/<uuid><ext>` and aren't persisted (`_sweep_anon_audio()` clears files older than 1 hour); logged-in uploads go to `data/audio/<uuid><ext>` and write `extractions` + `vocab_entries` rows.
 - `GET /api/library` (login required) — list of the user's extractions newest-first with word counts.
 - `GET /api/extractions/<id>` (login required) — single extraction, ownership-checked, with `vocab` rebuilt from `vocab_entries`.
+- `POST /api/extractions/<id>/reextract` (login required) — body `{ level?, min_count?, top? }`. Loads the stored transcript, re-runs `extract_vocab` + `translate` with the new params, replaces the extraction's `vocab_entries` rows, updates `min_count` / `top_k` on the extractions row, then returns the same shape as the GET above so the client can drop it into state.
 - `GET /audio/<token>` — binary audio. Same dual logic as before: DB row → ownership check → serve from `data/audio/`, else fall back to the anon temp dir.
 - Catch-all `/<path:path>` and `/` — SPA fallback. Reads `frontend/dist/`; if the path is a real built asset it's served directly, otherwise `index.html` is returned so React Router can take over. If `frontend/dist/` doesn't exist yet, returns a 503 telling you to build the frontend.
 
@@ -58,7 +64,8 @@ Vite + React 18 + React Router 6.
 - `src/components/Layout.jsx` — topbar with auth-aware nav (Library / email / Log out vs Log in / Sign up). Uses an `<Outlet>` so route content slots in below. On mobile (≤640px) the inline nav collapses behind a hamburger button and reappears as a column-flex dropdown panel below the topbar; the panel auto-closes when the route changes (`useEffect` on `location.pathname`). The Log in link gets a `topbar-secondary` outline-button treatment in the dropdown so it matches the Sign-up CTA's footprint, while staying a plain text link on desktop.
 - `src/components/VocabResult.jsx` — shared between the "just-uploaded anonymous result" view (rendered inline by `IndexPage`) and the saved-extraction view (rendered by `ExtractionPage`). Same vocab table + audio player + transcript `<details>`.
 - `src/pages/IndexPage.jsx` — upload form. On success: if `extraction_id` is in the response, navigates to `/extraction/<id>`; otherwise (anonymous) sets local state and shows the result inline.
-- `src/pages/{Login,Signup,Library,Extraction}Page.jsx` — straightforward form pages.
+- `src/pages/{Login,Signup,Library,Extraction}Page.jsx` — straightforward form pages. `ExtractionPage` also mounts a `ReextractPanel`.
+- `src/components/ReextractPanel.jsx` — collapsible `<details>` rendered above the audio player on the saved-extraction view (passed in as the `controls` slot on `VocabResult`, so anonymous results don't see it). Lets the user pick a new difficulty / min count / top words and POSTs to `/api/extractions/<id>/reextract`; the response replaces the page's `data` state in place. The upload form (`IndexPage`) has the matching Difficulty dropdown.
 - `src/styles.css` — same rules as the previous Jinja CSS, ported in full (topbar, vocab table, mobile media query for the table-to-cards reflow, auth form styling, etc.). All colours go through CSS variables; the default `:root` block is the dark palette and `:root[data-theme="light"]` overrides for light mode.
 - `src/components/ThemeToggle.jsx` — sun/moon SVG button in the topbar that flips `<html data-theme>` between `"dark"` and `"light"` and persists the choice to `localStorage["easy-german-theme"]`. An inline script in `index.html` reads that value (defaulting to `"dark"`) and sets `data-theme` *before* the stylesheet loads, so there's no light-flash on first paint.
 - **Touch hover gotcha**: every `:hover` rule is wrapped in `@media (hover: hover) and (pointer: fine)`. Without this, iOS Safari and mobile Firefox keep the hover state applied after a tap until you tap somewhere else — the global `button:hover:not(:disabled) { background: var(--accent-hover); }` was painting the hamburger and theme-toggle buttons orange and they stayed that way. Icon buttons also set `-webkit-tap-highlight-color: transparent`, suppress `:focus` outline in favour of `:focus-visible` for keyboard users, and call `e.currentTarget.blur()` after the click to drop focus immediately.
@@ -94,6 +101,8 @@ Email + password accounts (no OAuth, no email verification, no password reset).
 - **Sessions**: Flask's signed-cookie sessions, signed by a 32-byte token persisted at `data/session_token` (created on first run, mode 0600). Wired in via `app.config["SECRET_KEY"] = _load_session_token()` — the dict-style assignment is deliberate; the local `block-env.sh` hook rejects several dotted credential-style substrings, which the attribute-style form would trip on.
 - **Auth helpers**: `werkzeug.security.generate_password_hash` / `check_password_hash` (defaults to scrypt). `@app.before_request _load_user` puts the row into `g.user`. `login_required` decorator returns `401 { error }` JSON so the React app can route to `/login` client-side.
 - **`data/`** is gitignored — DB, audio, and session token all stay local.
+
+`reextract.py` is a standalone CLI that rebuilds `vocab_entries` rows for already-stored extractions using the current filter logic (use after changing `COMMON_ZIPF_THRESHOLD`, `KEEP_POS`, etc.). Flags: `--user EMAIL`, `--level {A2+,B1+,B2+,C1+}`, `--min-count`, `--top`, `--dry-run`. Idempotent. Same effect as clicking the panel for every saved extraction in turn.
 
 ## Dependencies
 
