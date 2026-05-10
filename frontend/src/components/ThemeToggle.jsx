@@ -27,14 +27,16 @@ export default function ThemeToggle() {
     }
   }, [theme]);
 
-  const toggle = () => setTheme((t) => (t === "dark" ? "light" : "dark"));
   const next = theme === "dark" ? "light" : "dark";
 
   return (
     <button
       type="button"
       className="theme-toggle"
-      onClick={toggle}
+      onClick={(e) => {
+        setTheme((t) => (t === "dark" ? "light" : "dark"));
+        e.currentTarget.blur();
+      }}
       aria-label={`Switch to ${next} mode`}
       title={`Switch to ${next} mode`}
     >

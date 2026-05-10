@@ -74,6 +74,11 @@ main {
   color: var(--fg);
   font-size: 16px;
 }
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
 .topbar-nav {
   display: flex;
   align-items: center;
@@ -81,6 +86,36 @@ main {
   font-size: 14px;
 }
 .topbar-nav a { text-decoration: none; }
+
+/* Hamburger + mobile dropdown — both hidden on desktop. */
+.hamburger {
+  display: none;
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--fg);
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 6px;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  -webkit-tap-highlight-color: transparent;
+}
+.hamburger svg { width: 18px; height: 18px; display: block; }
+.hamburger:focus { outline: none; }
+.hamburger:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .hamburger:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+}
+
+.mobile-menu { display: none; }
 .topbar-email {
   color: var(--fg-muted);
   font-size: 13px;
@@ -99,7 +134,9 @@ main {
   cursor: pointer;
   padding: 0;
 }
-.link-button:hover { color: var(--accent-hover); }
+@media (hover: hover) and (pointer: fine) {
+  .link-button:hover { color: var(--accent-hover); }
+}
 .topbar-cta {
   background: var(--accent);
   color: white;
@@ -108,7 +145,9 @@ main {
   border-radius: 6px;
   font-weight: 600;
 }
-.topbar-cta:hover { background: var(--accent-hover); color: white; }
+@media (hover: hover) and (pointer: fine) {
+  .topbar-cta:hover { background: var(--accent-hover); color: white; }
+}
 
 .theme-toggle {
   background: none;
@@ -122,12 +161,23 @@ main {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-}
-.theme-toggle:hover {
-  border-color: var(--accent);
-  color: var(--accent);
+  -webkit-tap-highlight-color: transparent;
 }
 .theme-toggle svg { width: 16px; height: 16px; display: block; }
+/* Suppress the focus ring after tap; keep it for keyboard navigation. */
+.theme-toggle:focus { outline: none; }
+.theme-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* Only hover-capable devices get the hover swap — prevents "stuck"
+   highlight on iOS/Android after tap. */
+@media (hover: hover) and (pointer: fine) {
+  .theme-toggle:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+}
 
 .anon-notice {
   background: var(--notice-bg);
@@ -154,7 +204,9 @@ h1 {
 }
 
 a { color: var(--accent); }
-a:hover { color: var(--accent-hover); }
+@media (hover: hover) and (pointer: fine) {
+  a:hover { color: var(--accent-hover); }
+}
 
 form {
   background: var(--card);
@@ -219,7 +271,9 @@ button {
   border-radius: 8px;
   cursor: pointer;
 }
-button:hover:not(:disabled) { background: var(--accent-hover); }
+@media (hover: hover) and (pointer: fine) {
+  button:hover:not(:disabled) { background: var(--accent-hover); }
+}
 button:disabled { opacity: 0.6; cursor: wait; }
 
 .hint { color: var(--fg-muted); font-size: 13px; margin-top: 12px; }
@@ -370,7 +424,9 @@ pre.error {
   font-weight: 600;
   font-size: 14px;
 }
-.primary-link:hover { background: var(--accent-hover); color: white; }
+@media (hover: hover) and (pointer: fine) {
+  .primary-link:hover { background: var(--accent-hover); color: white; }
+}
 
 .extraction-list {
   list-style: none;
@@ -392,7 +448,9 @@ pre.error {
   color: var(--fg);
   word-break: break-word;
 }
-.extraction-card .extraction-title:hover { color: var(--accent); }
+@media (hover: hover) and (pointer: fine) {
+  .extraction-card .extraction-title:hover { color: var(--accent); }
+}
 .extraction-meta {
   margin: 4px 0 0;
   color: var(--fg-muted);
@@ -416,8 +474,40 @@ pre.error {
   .meta { font-size: 13px; }
 
   .topbar { padding: 10px 14px; }
-  .topbar-nav { gap: 12px; font-size: 13px; }
-  .topbar-email { max-width: 120px; }
+  .topbar-right { gap: 10px; }
+
+  /* Swap the inline nav for a hamburger that opens a dropdown panel. */
+  .topbar-nav { display: none; }
+  .hamburger { display: inline-flex; }
+
+  .mobile-menu.open {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 14px;
+    padding: 14px 16px;
+    background: var(--card);
+    border-bottom: 1px solid var(--border);
+    font-size: 15px;
+  }
+  .mobile-menu a { text-decoration: none; padding: 6px 0; }
+  .mobile-menu .topbar-email {
+    max-width: none;
+    white-space: normal;
+    overflow: visible;
+    font-size: 13px;
+  }
+  .mobile-menu .logout-form { display: block; }
+  .mobile-menu .link-button { padding: 6px 0; text-align: left; }
+  .mobile-menu .topbar-cta { text-align: center; padding: 10px 12px; }
+  .mobile-menu .topbar-secondary {
+    text-align: center;
+    padding: 10px 12px;
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    border-radius: 6px;
+    font-weight: 600;
+  }
 
   .auth-card { margin-top: 16px; padding: 20px; }
   .library-header { gap: 8px; }
