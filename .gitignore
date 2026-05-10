@@ -16,3 +16,6 @@ venv/
 
 # IDE
 .vscode/
+
+# Local DB + saved audio + secret key
+data/

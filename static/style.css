@@ -26,7 +26,69 @@ body {
 main {
   max-width: 1000px;
   margin: 0 auto;
-  padding: 32px 24px 64px;
+  padding: 28px 24px 64px;
+}
+
+/* Top nav bar */
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 24px;
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+}
+.topbar .brand {
+  font-weight: 700;
+  text-decoration: none;
+  color: var(--fg);
+  font-size: 16px;
+}
+.topbar-nav {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-size: 14px;
+}
+.topbar-nav a { text-decoration: none; }
+.topbar-email {
+  color: var(--fg-muted);
+  font-size: 13px;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.logout-form { margin: 0; padding: 0; background: none; border: none; }
+.link-button {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 0;
+}
+.link-button:hover { color: var(--accent-hover); }
+.topbar-cta {
+  background: var(--accent);
+  color: white;
+  text-decoration: none;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-weight: 600;
+}
+.topbar-cta:hover { background: var(--accent-hover); color: white; }
+
+.anon-notice {
+  background: #fff7ed;
+  border: 1px solid #f3d9b8;
+  color: #7a4a00;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 14px;
+  margin: 0 0 16px;
 }
 
 h1 {
@@ -70,12 +132,24 @@ label small {
 
 input[type=file],
 input[type=number],
+input[type=text],
+input[type=email],
+input[type=password],
 select {
   font: inherit;
   padding: 8px 10px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: white;
+}
+input[type=text]:focus,
+input[type=email]:focus,
+input[type=password]:focus,
+input[type=number]:focus,
+select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(179, 92, 0, 0.15);
 }
 
 .row {
@@ -183,6 +257,106 @@ pre.error {
   white-space: pre-wrap;
 }
 
+/* Auth pages */
+.auth-card {
+  max-width: 380px;
+  margin: 32px auto 0;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 28px;
+}
+.auth-card h1 { margin-top: 0; font-size: 22px; }
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  background: none;
+  border: none;
+  padding: 0;
+}
+.auth-form input[type=email],
+.auth-form input[type=password],
+.auth-form input[type=text] {
+  padding: 12px 14px;
+  font-size: 16px;
+}
+.auth-form button {
+  margin-top: 6px;
+  padding: 12px 20px;
+  font-size: 16px;
+}
+.auth-alt {
+  margin-top: 18px;
+  font-size: 14px;
+  color: var(--fg-muted);
+  text-align: center;
+}
+.form-error {
+  background: var(--error-bg);
+  color: var(--error-fg);
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin: 0 0 14px;
+  font-size: 14px;
+}
+
+/* Library list */
+.library-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.library-header h1 { margin: 0; }
+.primary-link {
+  background: var(--accent);
+  color: white;
+  text-decoration: none;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 14px;
+}
+.primary-link:hover { background: var(--accent-hover); color: white; }
+
+.extraction-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 12px;
+}
+.extraction-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 18px;
+}
+.extraction-card .extraction-title {
+  font-weight: 600;
+  font-size: 16px;
+  text-decoration: none;
+  color: var(--fg);
+  word-break: break-word;
+}
+.extraction-card .extraction-title:hover { color: var(--accent); }
+.extraction-meta {
+  margin: 4px 0 0;
+  color: var(--fg-muted);
+  font-size: 13px;
+}
+.empty-state {
+  background: var(--card);
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  padding: 28px;
+  text-align: center;
+  color: var(--fg-muted);
+}
+
 /* ─── Mobile (≤640px) ─────────────────────────────────────────────────────── */
 @media (max-width: 640px) {
   main { padding: 20px 14px 48px; }
@@ -191,10 +365,21 @@ pre.error {
   .lede { font-size: 15px; margin-bottom: 20px; }
   .meta { font-size: 13px; }
 
+  .topbar { padding: 10px 14px; }
+  .topbar-nav { gap: 12px; font-size: 13px; }
+  .topbar-email { max-width: 120px; }
+
+  .auth-card { margin-top: 16px; padding: 20px; }
+  .library-header { gap: 8px; }
+  .extraction-card { padding: 12px 14px; }
+
   /* Form: bigger touch targets, prevent iOS zoom-on-focus by keeping input >=16px */
   form { padding: 16px; border-radius: 10px; }
   input[type=file],
   input[type=number],
+  input[type=text],
+  input[type=email],
+  input[type=password],
   select {
     font-size: 16px;
     padding: 10px 12px;

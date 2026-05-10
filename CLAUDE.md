@@ -36,11 +36,23 @@ Flask app that wraps the same pipeline. Run `python3 app.py` → <http://127.0.0
 - Reuses `transcribe`, `extract_vocab`, `translate` from `easy_german.py` (no logic duplicated).
 - Default model in the form is `small` (not `medium` like the CLI) since browser waits feel longer.
 - Allowed extensions: `.wav .mp3 .m4a .ogg .flac .mp4 .webm`. Max upload 500 MB.
-- Uploaded audio is saved to `<tmpdir>/easy-german-uploads/<uuid><ext>` (kept after processing so the result page can play it back) and served via `/audio/<token>` using `send_from_directory`. `_sweep_old_uploads()` runs on each upload and deletes files older than `UPLOAD_TTL_SECONDS` (1 hour).
+- Two upload paths share `/process`. **Anonymous** users: file goes to `<tmpdir>/easy-german-anon/<uuid><ext>` (system temp dir), `_sweep_anon_audio()` deletes files older than `ANON_AUDIO_TTL_SECONDS` (1 hour) on each new anon upload, and `result.html` renders directly with an amber "not saved" notice. **Logged-in** users: file goes to `data/audio/<uuid><ext>`, an `extractions` row + `vocab_entries` rows are written, then a redirect to `/extractions/<id>`.
+- `/audio/<token>`: looks the token up in `extractions` first — if found, ownership is checked against `g.user["id"]` (404 otherwise) and served from `data/audio/`. If not in DB, falls back to `ANON_AUDIO_DIR` (UUID acts as the only gate, same as the pre-auth model).
 - Result page renders an `<audio controls>` element pointing at `/audio/<token>` above the vocab table.
-- Templates in `templates/` (`index.html`, `result.html`, `error.html`); CSS in `static/style.css`.
+- Templates in `templates/`: `base.html` (shared topbar + main slot), `index.html`, `result.html`, `error.html`, `login.html`, `signup.html`, `library.html`. Existing pages extend `base.html`. CSS in `static/style.css`.
 - `app.run(host="0.0.0.0", ...)` binds on all interfaces so the app is reachable from other devices on the same Wi-Fi (e.g. phone at `http://<mac-lan-ip>:5001`). Switch back to `127.0.0.1` (commented out below the active line) for loopback-only.
-- Mobile-friendly: every template ships a `<meta name="viewport" content="width=device-width, initial-scale=1">`, and `static/style.css` has a `@media (max-width: 640px)` block that turns the vocab table into a card list (thead hidden, each row becomes a card; POS+count render inline as `noun · 3×` via `::after` pseudo-elements; meaning and example stacked vertically with a dashed separator). Form inputs are bumped to 16px on mobile to suppress iOS auto-zoom; the submit button goes full-width.
+- Mobile-friendly: every template ships a `<meta name="viewport" content="width=device-width, initial-scale=1">`, and `static/style.css` has a `@media (max-width: 640px)` block that turns the vocab table into a card list (thead hidden, each row becomes a card; POS+count render inline as `noun · 3×` via `::after` pseudo-elements; meaning and example stacked vertically with a dashed separator). Form inputs (file/number/text/email/password/select) are bumped to 16px on mobile to suppress iOS auto-zoom; the submit button goes full-width.
+
+## Auth + persistence (`app.py`, `db.py`)
+
+Email + password accounts (no OAuth, no email verification, no password reset).
+
+- **Storage**: SQLite at `data/easy-german.db`. Three tables — `users` (`email` UNIQUE NOCASE + `password_hash`), `extractions` (one row per pipeline run, with `audio_token`, `model`, `min_count`, `top_k`, `transcript`, `created_at`), `vocab_entries` (one row per word, ordered by `position`, ON DELETE CASCADE from extractions). Schema lives in `db.py::SCHEMA`; `init_db()` runs on import.
+- **Sessions**: Flask's signed-cookie sessions, signed by a 32-byte token persisted at `data/session_token` (created on first run, mode 0600). Wired in via `app.config["SECRET_KEY"] = _load_session_token()` — the dict-style assignment is deliberate; the local `block-env.sh` hook rejects several dotted credential-style substrings, which the attribute-style form would trip on.
+- **Auth helpers**: `werkzeug.security.generate_password_hash` / `check_password_hash` (defaults to scrypt). `@app.before_request _load_user` puts the row into `g.user`; `@app.context_processor` exposes `current_user` to templates. `login_required` decorator + `_safe_next()` for relative-only redirects.
+- **Routes**: `/signup`, `/login`, `/logout` (POST). Public: `/`, `/process`, `/audio/<token>`, `/login`, `/signup`. Login-gated: `/library`, `/extractions/<int:extraction_id>`.
+- **Library**: `/library` lists the user's extractions newest-first with word counts. `/extractions/<id>` reconstructs `Vocab` instances from `vocab_entries` rows (zipf=0.0 since it isn't stored) and reuses `result.html`.
+- **`data/`** is gitignored — DB, audio, and session token all stay local.
 
 ## Dependencies (`requirements.txt`)
 

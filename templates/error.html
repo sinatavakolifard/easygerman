@@ -1,16 +1,8 @@
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Error — easy-german</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-</head>
-<body>
-  <main>
-    <p><a href="{{ url_for('index') }}">← Back</a></p>
-    <h1>Something went wrong</h1>
-    <pre class="error">{{ message }}</pre>
-  </main>
-</body>
-</html>
+{% extends "base.html" %}
+{% block title %}Error — easy-german{% endblock %}
+
+{% block content %}
+  <p><a href="{{ url_for('index') if current_user else url_for('login') }}">← Back</a></p>
+  <h1>Something went wrong</h1>
+  <pre class="error">{{ message }}</pre>
+{% endblock %}

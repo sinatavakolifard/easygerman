@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Library — easy-german{% endblock %}
+
+{% block content %}
+  <div class="library-header">
+    <h1>Your library</h1>
+    <a href="{{ url_for('index') }}" class="primary-link">+ New extraction</a>
+  </div>
+
+  {% if extractions %}
+    <ul class="extraction-list">
+      {% for e in extractions %}
+        <li class="extraction-card">
+          <a class="extraction-title" href="{{ url_for('show_extraction', extraction_id=e.id) }}">
+            {{ e.filename }}
+          </a>
+          <p class="extraction-meta">
+            {{ e.created_at }}
+            &nbsp;·&nbsp; {{ e.word_count }} word{% if e.word_count != 1 %}s{% endif %}
+            &nbsp;·&nbsp; model: {{ e.model }}
+          </p>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="empty-state">
+      You haven't extracted any audio yet.
+      <a href="{{ url_for('index') }}">Upload your first file</a>.
+    </p>
+  {% endif %}
+{% endblock %}

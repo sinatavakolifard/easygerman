@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}easy-german{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header class="topbar">
+    <a href="{{ url_for('index') if current_user else url_for('login') }}" class="brand">easy-german</a>
+    <nav class="topbar-nav">
+      {% if current_user %}
+        <a href="{{ url_for('library') }}">Library</a>
+        <span class="topbar-email">{{ current_user.email }}</span>
+        <form method="post" action="{{ url_for('logout') }}" class="logout-form">
+          <button type="submit" class="link-button">Log out</button>
+        </form>
+      {% else %}
+        <a href="{{ url_for('login') }}">Log in</a>
+        <a href="{{ url_for('signup') }}" class="topbar-cta">Sign up</a>
+      {% endif %}
+    </nav>
+  </header>
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+  {% block scripts %}{% endblock %}
+</body>
+</html>
