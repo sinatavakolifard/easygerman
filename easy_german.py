@@ -201,19 +201,77 @@ def extract_vocab(
             if tok.pos_ == "NOUN" and gender_vals:
                 genders[key][gender_vals[0]] += 1
 
+    # Merge keys that share a case-folded lemma. spaCy occasionally splits
+    # the same word across multiple POS tags within one transcript (e.g.
+    # "unpopular" tagged as both NOUN and ADV), or across cases ("Unpopular"
+    # NOUN and "unpopular" NOUN). Without this, the same word appears 3-5
+    # times in the result.
+    _POS_PRIORITY = {"NOUN": 4, "VERB": 3, "ADJ": 2, "ADV": 1}
+    groups: dict[str, list[tuple[str, str]]] = defaultdict(list)
+    for key in counts:
+        groups[key[0].lower()].append(key)
+    if any(len(g) > 1 for g in groups.values()):
+        new_counts: Counter[tuple[str, str]] = Counter()
+        new_examples: dict[tuple[str, str], str] = {}
+        new_first: dict[tuple[str, str], int] = {}
+        new_genders: dict[tuple[str, str], Counter[str]] = defaultdict(Counter)
+        for entries in groups.values():
+            if len(entries) == 1:
+                k = entries[0]
+                new_counts[k] = counts[k]
+                new_examples[k] = examples[k]
+                new_first[k] = first_index[k]
+                if k in genders:
+                    new_genders[k] = genders[k]
+                continue
+            # Winner: highest count, then POS priority, then title-case
+            # for nouns (German nouns are capitalised).
+            def _score(k: tuple[str, str]) -> tuple[int, int, int]:
+                lemma, pos = k
+                return (
+                    counts[k],
+                    _POS_PRIORITY.get(pos, 0),
+                    1 if pos == "NOUN" and lemma[:1].isupper() else 0,
+                )
+            winner = max(entries, key=_score)
+            new_counts[winner] = sum(counts[k] for k in entries)
+            earliest = min(entries, key=lambda k: first_index[k])
+            new_examples[winner] = examples[earliest]
+            new_first[winner] = first_index[earliest]
+            combined: Counter[str] = Counter()
+            for k in entries:
+                combined.update(genders.get(k, Counter()))
+            if combined:
+                new_genders[winner] = combined
+        counts = new_counts
+        examples = new_examples
+        first_index = new_first
+        genders = new_genders
+
     vocab: list[Vocab] = []
     for (lemma, pos), count in counts.items():
         lower = lemma.lower()
         zipf = zipf_frequency(lower, "de")
         if zipf >= max_zipf or zipf < RARE_ZIPF_FLOOR:
             continue
-        # Drop English bleed-through (intro words like "Easy", "German", brand
-        # names) — if the word is markedly more common in English than German
-        # and is a real English word, it's probably not the German vocab the
-        # user wants to learn.
+        # Drop English bleed-through. If the word is meaningfully more common
+        # in English than German (10x = +1.0 on the zipf log scale), it's
+        # probably not the German vocab the learner wants. Genuine German
+        # loanwords like "Computer" or "Internet" stay because their German
+        # zipf is similar or higher than the English one.
         zipf_en = zipf_frequency(lower, "en")
-        if zipf_en >= 4.0 and zipf_en - zipf >= 1.0:
+        if zipf_en > zipf + 1.0:
             continue
+        # Hyphenated compounds where every part is more English than German
+        # ("Unpopular-Opinion"). The check above misses these because the
+        # whole compound has zipf 0 in both languages.
+        if "-" in lower:
+            parts = [p for p in lower.split("-") if len(p) >= 3]
+            if parts and all(
+                zipf_frequency(p, "en") > zipf_frequency(p, "de") + 1.0
+                for p in parts
+            ):
+                continue
         if count < min_count:
             continue
         article = ""
