@@ -443,6 +443,73 @@ def api_reextract(extraction_id):
     return api_show_extraction(extraction_id)
 
 
+# ─── Saved words ────────────────────────────────────────────────────────
+
+
+@app.route("/api/saved-words", methods=["GET"])
+@login_required
+def api_saved_words():
+    rows = get_db().execute(
+        """SELECT id, lemma, pos, article, meaning, example,
+                  example_translation, source_filename, saved_at
+           FROM saved_words
+           WHERE user_id = ?
+           ORDER BY saved_at DESC""",
+        (g.user["id"],),
+    ).fetchall()
+    return jsonify(words=[dict(r) for r in rows])
+
+
+@app.route("/api/saved-words", methods=["POST"])
+@login_required
+def api_save_word():
+    payload = request.get_json(silent=True) or {}
+    lemma = (payload.get("lemma") or "").strip()
+    pos = (payload.get("pos") or "").strip()
+    if not lemma or not pos:
+        return jsonify(error="lemma and pos are required"), 400
+    db = get_db()
+    try:
+        cur = db.execute(
+            """INSERT INTO saved_words
+                  (user_id, lemma, pos, article, meaning, example,
+                   example_translation, source_filename)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                g.user["id"],
+                lemma,
+                pos,
+                payload.get("article") or "",
+                payload.get("meaning") or "",
+                payload.get("example") or "",
+                payload.get("example_translation") or "",
+                payload.get("source_filename") or "",
+            ),
+        )
+        db.commit()
+        return jsonify(id=cur.lastrowid, lemma=lemma, pos=pos), 201
+    except sqlite3.IntegrityError:
+        row = db.execute(
+            "SELECT id FROM saved_words WHERE user_id = ? AND lemma = ? AND pos = ?",
+            (g.user["id"], lemma, pos),
+        ).fetchone()
+        return jsonify(id=row["id"] if row else None, lemma=lemma, pos=pos), 200
+
+
+@app.route("/api/saved-words/<int:word_id>", methods=["DELETE"])
+@login_required
+def api_delete_saved_word(word_id):
+    db = get_db()
+    cur = db.execute(
+        "DELETE FROM saved_words WHERE id = ? AND user_id = ?",
+        (word_id, g.user["id"]),
+    )
+    db.commit()
+    if cur.rowcount == 0:
+        return jsonify(error="Not found"), 404
+    return jsonify(ok=True)
+
+
 # ─── Audio file (binary, kept on the same path the React app expects) ───
 
 

@@ -5,6 +5,7 @@ import LoginPage from "./pages/LoginPage.jsx";
 import SignupPage from "./pages/SignupPage.jsx";
 import LibraryPage from "./pages/LibraryPage.jsx";
 import ExtractionPage from "./pages/ExtractionPage.jsx";
+import SavedWordsPage from "./pages/SavedWordsPage.jsx";
 import { useAuth } from "./AuthContext.jsx";
 
 function RequireAuth({ children }) {
@@ -34,6 +35,14 @@ export default function App() {
           element={
             <RequireAuth>
               <ExtractionPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="saved"
+          element={
+            <RequireAuth>
+              <SavedWordsPage />
             </RequireAuth>
           }
         />

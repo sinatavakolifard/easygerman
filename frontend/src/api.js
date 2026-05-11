@@ -52,4 +52,12 @@ export const api = {
       method: "POST",
       body: JSON.stringify(params),
     }),
+  savedWords: () => jsonFetch("/api/saved-words"),
+  saveWord: (word) =>
+    jsonFetch("/api/saved-words", {
+      method: "POST",
+      body: JSON.stringify(word),
+    }),
+  deleteSavedWord: (id) =>
+    jsonFetch(`/api/saved-words/${id}`, { method: "DELETE" }),
 };

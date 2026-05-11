@@ -329,6 +329,31 @@ table.vocab .lemma .article {
   font-weight: 400;
   margin-right: 2px;
 }
+
+.save-toggle {
+  background: none;
+  border: none;
+  color: var(--fg-muted);
+  cursor: pointer;
+  padding: 0;
+  margin-right: 6px;
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  -webkit-tap-highlight-color: transparent;
+}
+.save-toggle svg { width: 16px; height: 16px; display: block; }
+.save-toggle.saved { color: var(--accent); }
+.save-toggle:disabled { opacity: 0.5; cursor: wait; }
+.save-toggle:focus { outline: none; }
+.save-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .save-toggle:hover:not(:disabled) { color: var(--accent); }
+}
 table.vocab .example { font-size: 14px; }
 table.vocab .example-de { color: var(--fg); }
 table.vocab .example-en {
@@ -526,6 +551,59 @@ pre.error {
   color: var(--fg-muted);
 }
 
+/* Saved words page */
+.saved-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 12px;
+}
+.saved-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 18px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.saved-content { flex: 1; min-width: 0; }
+.saved-lemma {
+  font-weight: 600;
+  font-size: 17px;
+}
+.saved-lemma .article {
+  color: var(--fg-muted);
+  font-weight: 400;
+  margin-right: 2px;
+}
+.saved-pos {
+  color: var(--fg-muted);
+  font-weight: 400;
+  font-size: 13px;
+  margin-left: 4px;
+}
+.saved-meaning {
+  margin: 4px 0 0;
+}
+.saved-example {
+  margin-top: 8px;
+  font-size: 14px;
+}
+.saved-example .example-de { color: var(--fg); }
+.saved-example .example-en {
+  margin-top: 4px;
+  font-style: italic;
+  color: var(--fg-muted);
+}
+.saved-meta {
+  margin: 8px 0 0;
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+
 /* ─── Mobile (≤640px) ─────────────────────────────────────────────────────── */
 @media (max-width: 640px) {
   main { padding: 20px 14px 48px; }
@@ -572,7 +650,20 @@ pre.error {
 
   .auth-card { margin-top: 16px; padding: 20px; }
   .library-header { gap: 8px; }
-  .extraction-card { padding: 12px 14px; }
+
+  /* Stack content + delete button on narrow screens so the title can
+     occupy the full row width instead of getting squeezed. */
+  .extraction-card,
+  .saved-card {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 12px 14px;
+    gap: 10px;
+  }
+  .extraction-card .extraction-delete,
+  .saved-card .extraction-delete {
+    align-self: flex-end;
+  }
 
   /* On narrow screens, stack the meta line and the Delete button. */
   .result-header {
@@ -593,7 +684,10 @@ pre.error {
     font-size: 16px;
     padding: 10px 12px;
   }
-  button {
+  /* Only stretch the primary form-submit button (Extract vocabulary,
+     Log in, Sign up, Re-extract). Other buttons — Delete, Remove,
+     hamburger, theme toggle, save star — keep their natural width. */
+  form button[type=submit] {
     width: 100%;
     padding: 14px 20px;
     font-size: 16px;

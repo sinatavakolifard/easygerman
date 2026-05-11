@@ -1,6 +1,28 @@
 import { Link } from "react-router-dom";
 
-export default function VocabResult({ data, currentUser, controls, headerAction }) {
+function StarIcon({ filled }) {
+  return (
+    <svg viewBox="0 0 24 24" fill={filled ? "currentColor" : "none"}
+         stroke="currentColor" strokeWidth="2" strokeLinecap="round"
+         strokeLinejoin="round" aria-hidden="true">
+      <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+    </svg>
+  );
+}
+
+function vocabKey(v) {
+  return `${v.lemma}|${v.pos}`;
+}
+
+export default function VocabResult({
+  data,
+  currentUser,
+  controls,
+  headerAction,
+  savedMap,
+  onToggleSave,
+  savingKey,
+}) {
   if (!data) return null;
   const {
     filename,
@@ -63,9 +85,29 @@ export default function VocabResult({ data, currentUser, controls, headerAction 
             </tr>
           </thead>
           <tbody>
-            {vocab.map((v, i) => (
+            {vocab.map((v, i) => {
+              const key = vocabKey(v);
+              const saved = savedMap ? savedMap.has(key) : false;
+              const busy = savingKey === key;
+              return (
               <tr key={i}>
                 <td className="lemma">
+                  {onToggleSave && (
+                    <button
+                      type="button"
+                      className={`save-toggle ${saved ? "saved" : ""}`}
+                      onClick={(e) => {
+                        onToggleSave(v);
+                        e.currentTarget.blur();
+                      }}
+                      disabled={busy}
+                      aria-pressed={saved}
+                      aria-label={saved ? `Unsave ${v.lemma}` : `Save ${v.lemma}`}
+                      title={saved ? "Remove from saved words" : "Save word"}
+                    >
+                      <StarIcon filled={saved} />
+                    </button>
+                  )}
                   {v.article && <span className="article">{v.article}</span>}
                   {v.article ? " " : ""}
                   {v.lemma}
@@ -80,7 +122,8 @@ export default function VocabResult({ data, currentUser, controls, headerAction 
                   )}
                 </td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       ) : (

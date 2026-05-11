@@ -53,6 +53,27 @@ CREATE TABLE IF NOT EXISTS vocab_entries (
 );
 CREATE INDEX IF NOT EXISTS idx_vocab_extraction
     ON vocab_entries(extraction_id, position);
+
+-- Words the user has favourited from any extraction. Denormalised:
+-- once a word is saved, it survives deletion or re-extraction of the
+-- source. (user_id, lemma, pos) is unique so the same word can't be
+-- saved twice; re-saving from a different extraction is a no-op.
+CREATE TABLE IF NOT EXISTS saved_words (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id             INTEGER NOT NULL,
+    lemma               TEXT    NOT NULL,
+    pos                 TEXT    NOT NULL,
+    article             TEXT,
+    meaning             TEXT,
+    example             TEXT,
+    example_translation TEXT,
+    source_filename     TEXT,
+    saved_at            TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, lemma, pos),
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_saved_words_user
+    ON saved_words(user_id, saved_at DESC);
 """
 
 
