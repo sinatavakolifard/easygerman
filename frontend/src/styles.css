@@ -463,7 +463,45 @@ pre.error {
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 14px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
+.extraction-content { flex: 1; min-width: 0; }
+.extraction-delete {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--fg-muted);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 6px 10px;
+  border-radius: 6px;
+  white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
+}
+.extraction-delete:focus { outline: none; }
+.extraction-delete:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.extraction-delete:disabled { opacity: 0.6; cursor: wait; }
+@media (hover: hover) and (pointer: fine) {
+  .extraction-delete:hover:not(:disabled) {
+    color: var(--error-fg);
+    border-color: var(--error-fg);
+    background: var(--error-bg);
+  }
+}
+.result-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.result-header .meta { margin: 0; }
 .extraction-card .extraction-title {
   font-weight: 600;
   font-size: 16px;
@@ -535,6 +573,14 @@ pre.error {
   .auth-card { margin-top: 16px; padding: 20px; }
   .library-header { gap: 8px; }
   .extraction-card { padding: 12px 14px; }
+
+  /* On narrow screens, stack the meta line and the Delete button. */
+  .result-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .result-header .extraction-delete { align-self: flex-start; }
 
   /* Form: bigger touch targets, prevent iOS zoom-on-focus by keeping input >=16px */
   form { padding: 16px; border-radius: 10px; }

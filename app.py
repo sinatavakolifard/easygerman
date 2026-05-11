@@ -368,6 +368,24 @@ def api_show_extraction(extraction_id):
     )
 
 
+@app.route("/api/extractions/<int:extraction_id>", methods=["DELETE"])
+@login_required
+def api_delete_extraction(extraction_id):
+    db = get_db()
+    row = db.execute(
+        "SELECT audio_token FROM extractions WHERE id = ? AND user_id = ?",
+        (extraction_id, g.user["id"]),
+    ).fetchone()
+    if row is None:
+        return jsonify(error="Not found"), 404
+    # Remove the audio file (best-effort — it may already be gone).
+    (AUDIO_DIR / row["audio_token"]).unlink(missing_ok=True)
+    # vocab_entries rows are removed via ON DELETE CASCADE.
+    db.execute("DELETE FROM extractions WHERE id = ?", (extraction_id,))
+    db.commit()
+    return jsonify(ok=True)
+
+
 @app.route("/api/extractions/<int:extraction_id>/reextract", methods=["POST"])
 @login_required
 def api_reextract(extraction_id):

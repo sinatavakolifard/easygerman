@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 
-export default function VocabResult({ data, currentUser, controls }) {
+export default function VocabResult({ data, currentUser, controls, headerAction }) {
   if (!data) return null;
   const {
     filename,
@@ -24,13 +24,16 @@ export default function VocabResult({ data, currentUser, controls }) {
         )}
       </p>
       <h1>Vocabulary</h1>
-      <p className="meta">
-        <strong>{filename}</strong>
-        &nbsp;·&nbsp; model: {model}
-        &nbsp;·&nbsp; min-count: {min_count}
-        &nbsp;·&nbsp; top: {top_k}
-        &nbsp;·&nbsp; {vocab.length} words
-      </p>
+      <div className="result-header">
+        <p className="meta">
+          <strong>{filename}</strong>
+          &nbsp;·&nbsp; model: {model}
+          &nbsp;·&nbsp; min-count: {min_count}
+          &nbsp;·&nbsp; top: {top_k}
+          &nbsp;·&nbsp; {vocab.length} words
+        </p>
+        {headerAction}
+      </div>
 
       {anonymous && (
         <p className="anon-notice">

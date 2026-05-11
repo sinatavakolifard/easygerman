@@ -45,6 +45,8 @@ export const api = {
     jsonFetch("/api/process", { method: "POST", body: formData }),
   library: () => jsonFetch("/api/library"),
   extraction: (id) => jsonFetch(`/api/extractions/${id}`),
+  deleteExtraction: (id) =>
+    jsonFetch(`/api/extractions/${id}`, { method: "DELETE" }),
   reextract: (id, params) =>
     jsonFetch(`/api/extractions/${id}/reextract`, {
       method: "POST",
