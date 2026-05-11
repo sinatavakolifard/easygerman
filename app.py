@@ -233,7 +233,7 @@ def api_process():
         model = "small"
     try:
         min_count = max(1, int(request.form.get("min_count", "1")))
-        top = max(1, int(request.form.get("top", "50")))
+        top = max(0, int(request.form.get("top", "50")))  # 0 = no cap
     except ValueError:
         min_count, top = 1, 50
     level = request.form.get("level", DEFAULT_LEVEL)
@@ -388,7 +388,7 @@ def api_reextract(extraction_id):
     max_zipf = DIFFICULTY_LEVELS.get(level, DIFFICULTY_LEVELS[DEFAULT_LEVEL])
     try:
         min_count = max(1, int(payload.get("min_count", extraction["min_count"])))
-        top = max(1, int(payload.get("top", extraction["top_k"])))
+        top = max(0, int(payload.get("top", extraction["top_k"])))  # 0 = no cap
     except (ValueError, TypeError):
         min_count = extraction["min_count"]
         top = extraction["top_k"]

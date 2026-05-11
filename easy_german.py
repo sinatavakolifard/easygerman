@@ -291,9 +291,10 @@ def extract_vocab(
         )
 
     # Pick the top_k most "important" words, then present them in the order
-    # they first appear in the audio.
+    # they first appear in the audio. top_k <= 0 means "no cap" — keep
+    # everything that passed the filter.
     vocab.sort(key=lambda v: v.score, reverse=True)
-    selected = vocab[:top_k]
+    selected = vocab if top_k <= 0 else vocab[:top_k]
     selected.sort(key=lambda v: v.first_index)
     return selected
 
@@ -365,7 +366,7 @@ def main() -> None:
         "--top",
         type=int,
         default=50,
-        help="Maximum number of words to keep (default: 50)",
+        help="Maximum number of words to keep (default: 50; 0 = no cap)",
     )
     parser.add_argument(
         "--max-zipf",

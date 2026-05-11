@@ -82,10 +82,14 @@ export default function ReextractPanel({ extraction, onUpdated }) {
             <span>Top words</span>
             <input
               type="number"
-              min={1}
+              min={0}
               value={top}
-              onChange={(e) => setTop(Number(e.target.value) || 1)}
+              onChange={(e) => {
+                const v = e.target.value;
+                setTop(v === "" ? 0 : Math.max(0, Number(v) || 0));
+              }}
             />
+            <small>0 = no cap.</small>
           </label>
         </div>
         <button type="submit" disabled={submitting}>

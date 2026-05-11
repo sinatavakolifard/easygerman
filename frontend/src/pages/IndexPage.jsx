@@ -126,9 +126,9 @@ export default function IndexPage() {
               type="number"
               name="top"
               defaultValue={config.default_top}
-              min={1}
+              min={0}
             />
-            <small>Cap on the result list size.</small>
+            <small>Cap on the result list size. 0 = no cap (all matching words).</small>
           </label>
         </div>
 
