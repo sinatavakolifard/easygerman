@@ -108,9 +108,11 @@ export default function VocabResult({
                       <StarIcon filled={saved} />
                     </button>
                   )}
-                  {v.article && <span className="article">{v.article}</span>}
-                  {v.article ? " " : ""}
-                  {v.lemma}
+                  <span className="lemma-text">
+                    {v.article && <span className="article">{v.article}</span>}
+                    {v.article ? " " : ""}
+                    {v.lemma}
+                  </span>
                 </td>
                 <td className="pos">{v.pos}</td>
                 <td className="count">{v.count}</td>

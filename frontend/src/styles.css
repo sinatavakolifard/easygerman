@@ -726,7 +726,16 @@ pre.error {
     font-size: 20px;
     line-height: 1.3;
     margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
   }
+  table.vocab td.lemma .lemma-text { flex: 1; min-width: 0; }
+  table.vocab td.lemma .save-toggle {
+    order: 1;
+    margin: 0;
+  }
+  table.vocab td.lemma .save-toggle svg { width: 22px; height: 22px; }
   /* POS + count rendered inline as a single "noun · 3×" tag line */
   table.vocab td.pos,
   table.vocab td.count {
