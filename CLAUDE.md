@@ -58,7 +58,7 @@ JSON API only — no Jinja, no `render_template`. Endpoints:
 - `GET /audio/<token>` — binary audio. Same dual logic as before: DB row → ownership check → serve from `data/audio/`, else fall back to the anon temp dir.
 - Catch-all `/<path:path>` and `/` — SPA fallback. Reads `frontend/dist/`; if the path is a real built asset it's served directly, otherwise `index.html` is returned so React Router can take over. If `frontend/dist/` doesn't exist yet, returns a 503 telling you to build the frontend.
 
-`app.run(host="0.0.0.0", ...)` keeps the dev server LAN-reachable (phone via `http://<mac-lan-ip>:5001`); the loopback-only line is commented out below it.
+The `__main__` block binds `127.0.0.1` with `debug=False` (safe by default — see Production / deployment); the LAN-reachable `host="0.0.0.0"` line is commented out below it for dev use (phone via `http://<mac-lan-ip>:5001`).
 
 ### Frontend (`frontend/`)
 
@@ -100,10 +100,21 @@ Single process. Build once, run Flask:
 
 ```
 cd frontend && npm run build                # outputs frontend/dist/
-python3 app.py                              # serves API + dist/ together
+python3 app.py                              # serves API + dist/ together (loopback, debugger off)
 ```
 
-For real deploys, replace `app.run()` with gunicorn so you don't run the Werkzeug debugger on a network: `gunicorn --workers 1 --timeout 0 --bind 0.0.0.0:5001 app:app`. `--workers 1` because each gunicorn worker holds its own copy of the Whisper model in RAM; `--timeout 0` because transcription routinely runs longer than the default 30 s. Front it with HTTPS — Cloudflare Tunnel (`cloudflared tunnel --url http://localhost:5001`) is the zero-config option; on a VPS, Caddy with `reverse_proxy localhost:5001` auto-issues a Let's Encrypt cert.
+**Never serve `python3 app.py` to a network.** The `__main__` block binds `127.0.0.1` with `debug=False` precisely so an accidental run isn't exposed (the Werkzeug debugger is a remote-code-execution vector). For LAN dev (e.g. testing from a phone), flip the commented `host="0.0.0.0"` line — but that's dev only, never the public path.
+
+For real serving, use gunicorn — it imports `app:app` directly and never runs the `__main__` block, so the debugger can't be reached: `gunicorn --workers 1 --timeout 0 --bind 127.0.0.1:5001 app:app`. `--workers 1` because each worker holds its own copy of the Whisper model in RAM; `--timeout 0` because transcription routinely runs longer than the default 30 s. Bind loopback only and let the tunnel reach in.
+
+**Live deployment — laptop as host, public at `https://easygerman.sinacodes.de`:**
+
+- `run-server.sh` — builds `frontend/dist/` if missing, then runs the gunicorn line above (loopback only).
+- `run-tunnel.sh` — `cloudflared tunnel run easy-german`, the named Cloudflare tunnel. Makes an *outbound* connection to Cloudflare, so no router ports are opened and the home IP stays hidden; Cloudflare terminates HTTPS with an auto-issued cert.
+- Tunnel config lives outside the repo in `~/.cloudflared/`: `config.yml` (maps `easygerman.sinacodes.de` → `http://localhost:5001`, 404 fallback) + `<tunnel-id>.json` credentials (secret, never commit). Created via `cloudflared tunnel login` → `cloudflared tunnel create easy-german` → `cloudflared tunnel route dns easy-german easygerman.sinacodes.de`.
+- Both processes only run while the laptop is awake/online; `caffeinate -s` keeps it from sleeping. Not yet daemonised (no launchd service) and no Cloudflare Access wall in front — the app's own email/password auth is the only gate.
+
+Alternatives: zero-config quick tunnel `cloudflared tunnel --url http://localhost:5001` (random `*.trycloudflare.com` URL); on a VPS, Caddy with `reverse_proxy localhost:5001` auto-issues a Let's Encrypt cert.
 
 ## Auth + persistence (`app.py`, `db.py`)
 

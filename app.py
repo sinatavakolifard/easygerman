@@ -548,5 +548,10 @@ def spa(path):
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5001, debug=True)
-    # app.run(host="127.0.0.1", port=5001, debug=True)
+    # Safe defaults: loopback-only, no debugger. The Werkzeug debugger is a
+    # remote-code-execution vector and must never be reachable off-box. The
+    # public deployment runs through gunicorn (which never executes this
+    # block); this branch is only for local dev. For LAN access from a phone,
+    # flip host to "0.0.0.0" temporarily.
+    app.run(host="127.0.0.1", port=5001, debug=False)
+    # app.run(host="0.0.0.0", port=5001, debug=False)  # LAN dev only
