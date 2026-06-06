@@ -20,22 +20,83 @@ The pipeline (`easy_german.py`) runs the audio through six stages:
 
 Difficulty levels (`--level`) map to a frequency ceiling: `A2+`, `B1+`, `B2+` (default), `C1+` — higher levels keep rarer words.
 
-## Requirements
+## Prerequisites
 
-- Python 3.9+
-- Node.js 18+ (only for the web frontend)
-- `ffmpeg` available on your `PATH` (faster-whisper needs it to decode audio)
+Three system tools are needed on every OS: **Python 3.9+**, **Node.js 18+** (for the web frontend), and **ffmpeg** (faster-whisper decodes audio through it). For the public deployment you also need **cloudflared**. Install them with your platform's package manager.
+
+### macOS (Homebrew)
+
+```bash
+brew install python node ffmpeg
+brew install cloudflared            # only for public deployment
+```
+
+### Debian / Ubuntu
+
+```bash
+sudo apt update
+sudo apt install -y python3 python3-venv python3-pip ffmpeg nodejs npm git
+```
+
+```bash
+# cloudflared (Cloudflare's apt repo):
+sudo mkdir -p --mode=0755 /usr/share/keyrings
+curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg \
+  | sudo tee /usr/share/keyrings/cloudflare-main.gpg >/dev/null
+echo "deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared $(lsb_release -cs) main" \
+  | sudo tee /etc/apt/sources.list.d/cloudflared.list
+sudo apt update && sudo apt install -y cloudflared
+```
+
+> Ubuntu/Debian's `nodejs` can be old. If `npm run build` complains about the Node version, install Node 18+ via [nvm](https://github.com/nvm-sh/nvm) or [NodeSource](https://github.com/nodesource/distributions).
+
+### Arch / Manjaro
+
+```bash
+sudo pacman -S --needed python python-pip python-virtualenv ffmpeg nodejs npm git
+```
+
+```bash
+# cloudflared is in the AUR:
+pamac build cloudflared             # Manjaro
+# or:  yay -S cloudflared
+```
+
+### Fedora / RHEL
+
+```bash
+sudo dnf install -y python3 python3-pip python3-virtualenv nodejs npm git
+sudo dnf install -y ffmpeg          # may need RPM Fusion enabled first
+```
+
+### Any Linux (no package): cloudflared static binary
+
+```bash
+mkdir -p ~/.local/bin
+curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 \
+  -o ~/.local/bin/cloudflared && chmod +x ~/.local/bin/cloudflared
+# make sure ~/.local/bin is on your PATH
+```
 
 ## Install
 
+The same steps on every platform. A virtual environment is recommended everywhere and **required** on Arch/Manjaro and recent Debian/Fedora (PEP 668 blocks system-wide `pip install`):
+
 ```bash
-# Backend
+git clone <your-repo-url> easy-german
+cd easy-german
+
+python -m venv .venv
+source .venv/bin/activate            # Windows: .venv\Scripts\activate
+
 pip install -r requirements.txt
 python -m spacy download de_core_news_sm
 
 # Frontend (only needed for the web app)
-cd frontend && npm install
+cd frontend && npm install && npm run build && cd ..
 ```
+
+The first transcription downloads the Whisper model weights (a few hundred MB for `medium`) to your cache automatically. Keep the venv active (`source .venv/bin/activate`) whenever you run the CLI or the server.
 
 ## CLI usage
 
@@ -95,7 +156,109 @@ gunicorn --workers 1 --timeout 0 --bind 127.0.0.1:5001 app:app
 
 `--workers 1` because each worker loads its own copy of the Whisper model; `--timeout 0` because transcription often runs longer than gunicorn's default 30s.
 
-> **Security note:** never expose `python3 app.py` directly to a network — its `__main__` block binds loopback with the debugger off on purpose. Put a reverse proxy or tunnel in front (see `run-server.sh` / `run-tunnel.sh` for the Cloudflare-tunnel setup used for the live deployment).
+> **Security note:** never expose `python3 app.py` directly to a network — its `__main__` block binds loopback with the debugger off on purpose. Put a reverse proxy or tunnel in front (see below).
+
+## Public deployment (Cloudflare Tunnel)
+
+The live site (`https://easygerman.sinacodes.de`) is just a machine running gunicorn on loopback, with a **named Cloudflare tunnel** making an *outbound* connection to Cloudflare — no router ports opened, the home IP stays hidden, and Cloudflare terminates HTTPS. Two helper scripts:
+
+- `run-server.sh` — builds `frontend/dist/` if missing, then runs gunicorn on `127.0.0.1:5001`.
+- `run-tunnel.sh` — `cloudflared tunnel run easy-german`.
+
+### One-time tunnel creation
+
+Done once, on any machine (this needs `CERT_PEM` from login):
+
+```bash
+cloudflared tunnel login
+cloudflared tunnel create easy-german
+cloudflared tunnel route dns easy-german easygerman.sinacodes.de
+```
+
+This writes `~/.cloudflared/config.yml`, `~/.cloudflared/<tunnel-id>.json`, and `CERT_PEM`.
+
+### Running it — macOS
+
+Keep the laptop awake with `caffeinate`, one process per terminal (activate the venv first):
+
+```bash
+source .venv/bin/activate
+caffeinate -s ./run-server.sh        # terminal 1
+caffeinate -s ./run-tunnel.sh        # terminal 2
+```
+
+### Running it — Linux (systemd)
+
+On Linux use **systemd user services** so both processes auto-start, restart on crash, and survive logout — no `caffeinate` needed. Adjust the paths if your clone isn't at `~/easy-german`.
+
+`~/.config/systemd/user/easy-german.service`
+
+```ini
+[Unit]
+Description=easy-german gunicorn server
+After=network-online.target
+
+[Service]
+WorkingDirectory=%h/easy-german
+ExecStart=%h/easy-german/.venv/bin/gunicorn --workers 1 --timeout 0 --bind 127.0.0.1:5001 app:app
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
+```
+
+`~/.config/systemd/user/easy-german-tunnel.service`
+
+```ini
+[Unit]
+Description=easy-german Cloudflare tunnel
+After=easy-german.service
+Requires=easy-german.service
+
+[Service]
+ExecStart=%h/.local/bin/cloudflared tunnel --config %h/.cloudflared/config.yml run
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
+```
+
+> Set `ExecStart` to wherever `cloudflared` lives — `/usr/bin/cloudflared` if installed from a repo (Arch/Debian), or `%h/.local/bin/cloudflared` for the static binary.
+
+```bash
+systemctl --user daemon-reload
+systemctl --user enable --now easy-german easy-german-tunnel
+loginctl enable-linger "$USER"       # keep services running while logged out
+# logs:
+journalctl --user -u easy-german -f
+```
+
+### Moving the deployment to another machine
+
+The public URL is tied to the tunnel + DNS, **not** to a machine — any host can serve it (one at a time; each host has its own SQLite DB). To migrate:
+
+1. Install the prerequisites and the app on the new host (sections above).
+2. Copy the tunnel credentials into `~/.cloudflared/`:
+   - `<tunnel-id>.json` — the secret, **required** to run. Transfer securely, never commit.
+   - `config.yml`
+3. **Fix the absolute `credentials-file:` path** in `config.yml` to the new host's home (e.g. `/home/<user>/.cloudflared/<tunnel-id>.json`).
+4. Run the tunnel **by UUID**, which needs no `CERT_PEM`:
+   ```bash
+   cloudflared tunnel --config ~/.cloudflared/config.yml run
+   ```
+   `CERT_PEM` is only needed to *create/manage* tunnels, or to run *by name* (as `run-tunnel.sh` does). Copy `CERT_PEM` too if you keep the by-name script.
+5. To carry over accounts/library, copy `data/easy-german.db` (plus `data/audio/` for a full host, and `data/session_token` to keep existing logins valid).
+
+### Per-host feature flags (read-only mode)
+
+The same code can run a **full** host and a **restricted** one. Flags — set as environment variables, or in a `python-dotenv` file in the project root — gate four actions **server-side**: `upload`, `audio`, `reextract`, `delete`. A restricted host keeps login, reading past words, and starring them.
+
+```bash
+# restricted host — disable all four (login + read + star only):
+echo "EASY_GERMAN_READONLY=1" > DOTENV_FILE
+```
+
+Granular overrides take precedence over the coarse switch: `EASY_GERMAN_UPLOAD`, `EASY_GERMAN_AUDIO`, `EASY_GERMAN_REEXTRACT`, `EASY_GERMAN_DELETE`. For example `EASY_GERMAN_READONLY=1 EASY_GERMAN_AUDIO=1` blocks everything but audio playback. An exported variable wins over the dotenv file. The `DOTENV_FILE` file is gitignored, so it stays per-host; a restricted host needs `data/easy-german.db` but not `data/audio/`.
 
 ## Project layout
 
