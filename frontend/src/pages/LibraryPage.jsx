@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api.js";
+import { useConfig } from "../ConfigContext.jsx";
 
 export default function LibraryPage() {
+  const { features } = useConfig();
   const [extractions, setExtractions] = useState(null);
   const [error, setError] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
@@ -63,15 +65,17 @@ export default function LibraryPage() {
                   &nbsp;·&nbsp; model: {e.model}
                 </p>
               </div>
-              <button
-                type="button"
-                className="extraction-delete"
-                onClick={() => onDelete(e)}
-                disabled={deletingId === e.id}
-                aria-label={`Delete ${e.filename}`}
-              >
-                {deletingId === e.id ? "Deleting…" : "Delete"}
-              </button>
+              {features.delete && (
+                <button
+                  type="button"
+                  className="extraction-delete"
+                  onClick={() => onDelete(e)}
+                  disabled={deletingId === e.id}
+                  aria-label={`Delete ${e.filename}`}
+                >
+                  {deletingId === e.id ? "Deleting…" : "Delete"}
+                </button>
+              )}
             </li>
           ))}
         </ul>

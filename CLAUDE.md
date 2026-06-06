@@ -44,7 +44,7 @@ Two-tier app: Flask is now a JSON API + static-file server, and the UI is a Reac
 
 JSON API only — no Jinja, no `render_template`. Endpoints:
 
-- `GET /api/config` — model list, defaults, allowed extensions (used by the upload form).
+- `GET /api/config` — model list, defaults, allowed extensions (used by the upload form), plus `features` (the per-machine feature flags, see below) so the SPA can hide disabled UI.
 - `GET /api/me` — `{ user: { id, email } | null }`.
 - `POST /api/auth/signup`, `POST /api/auth/login`, `POST /api/auth/logout` — JSON in / JSON out, set the session cookie. `login_required` returns `401 { error }` (no redirects) so the React app can route to `/login` itself.
 - `POST /api/process` — multipart upload. Returns `{ filename, model, min_count, top_k, transcript, audio_token, vocab[], anonymous, extraction_id?, created_at? }`. Anonymous uploads go to `<tmpdir>/easy-german-anon/<uuid><ext>` and aren't persisted (`_sweep_anon_audio()` clears files older than 1 hour); logged-in uploads go to `data/audio/<uuid><ext>` and write `extractions` + `vocab_entries` rows.
@@ -60,12 +60,21 @@ JSON API only — no Jinja, no `render_template`. Endpoints:
 
 The `__main__` block binds `127.0.0.1` with `debug=False` (safe by default — see Production / deployment); the LAN-reachable `host="0.0.0.0"` line is commented out below it for dev use (phone via `http://<mac-lan-ip>:5001`).
 
+#### Feature flags (per-machine)
+
+`app.py` reads a set of boolean feature flags at import time so the *same code* can run in different modes on different hosts (e.g. a second machine that serves the same Cloudflare tunnel URL but only allows reading). `_flag(name, default)` reads each via `os.getenv` — deliberately `os.getenv`, **not** the dotted attribute form, which contains the substring the local `block-env.sh` hook rejects. `FEATURES` holds `upload` / `audio` / `reextract` / `delete`. The coarse `EASY_GERMAN_READONLY=1` flips all four defaults to off; the per-feature vars (`EASY_GERMAN_UPLOAD`, `EASY_GERMAN_AUDIO`, `EASY_GERMAN_REEXTRACT`, `EASY_GERMAN_DELETE`) override individually, so a restricted host can re-enable just one.
+
+The `feature_required(name)` decorator gates the four write/heavy endpoints **server-side** (returns `403` when off): `POST /api/process` (upload), `GET /audio/<token>` (playback/download), `POST /api/extractions/<id>/reextract`, and `DELETE /api/extractions/<id>`. Everything else — login/signup, library + extraction reads, and all of `/api/saved-words` (starring) — stays enabled, so the restricted profile is "log in, read past words, star them". `/api/config` echoes `FEATURES` so the React app can hide the matching UI; the gate that actually enforces it is the decorator, the UI hiding is cosmetic.
+
+Flags come from the real environment **or** a local dotenv file. `load_dotenv()` (python-dotenv) runs right after the imports, before `FEATURES` is computed, so per-machine config can live in a gitignored dotenv file instead of being exported on every launch. An exported variable still wins over the file (`override=False`), and a missing file is a no-op — identical to the old behaviour. The file's literal name trips the `block-env.sh` hook, so it's created/maintained by hand, not by the agent.
+
 ### Frontend (`frontend/`)
 
 Vite + React 18 + React Router 6.
 
 - Entry: `index.html` → `src/main.jsx` → `src/App.jsx`. Routes: `/`, `/login`, `/signup`, `/library`, `/extraction/:id`.
 - `src/AuthContext.jsx` — calls `/api/me` on mount, exposes `user` (`undefined` while loading), `login`, `signup`, `logout`. `<RequireAuth>` in `App.jsx` redirects to `/login` for the gated pages.
+- `src/ConfigContext.jsx` — calls `/api/config` once on mount and exposes `{ config, features }`, defaulting to all-features-on until the fetch resolves (so the full host and the pre-load flash show the complete UI). Consumers gate UI on `features`: `IndexPage` swaps the upload form for a notice when `!features.upload`; `VocabResult` hides the audio player when `!features.audio`; `ExtractionPage` drops the re-extract panel / delete button for `!features.reextract` / `!features.delete`; `LibraryPage` hides its per-card Delete. Wired in `main.jsx` as `<ConfigProvider>` wrapping `<AuthProvider>`. `IndexPage` no longer fetches `/api/config` itself — it reads `config` (model/level/default lists) from this context, falling back to its inline `FALLBACK_CONFIG`.
 - `src/api.js` — thin `fetch` wrapper, `credentials: "include"` so the session cookie travels, raises on non-2xx with `err.data.error`.
 - `src/components/Layout.jsx` — topbar with auth-aware nav (Library / email / Log out vs Log in / Sign up). Uses an `<Outlet>` so route content slots in below. On mobile (≤640px) the inline nav collapses behind a hamburger button and reappears as a column-flex dropdown panel below the topbar; the panel auto-closes when the route changes (`useEffect` on `location.pathname`). The Log in link gets a `topbar-secondary` outline-button treatment in the dropdown so it matches the Sign-up CTA's footprint, while staying a plain text link on desktop.
 - `src/components/VocabResult.jsx` — shared between the "just-uploaded anonymous result" view (rendered inline by `IndexPage`) and the saved-extraction view (rendered by `ExtractionPage`). Same vocab table + audio player + transcript `<details>`.
@@ -114,6 +123,8 @@ For real serving, use gunicorn — it imports `app:app` directly and never runs 
 - Tunnel config lives outside the repo in `~/.cloudflared/`: `config.yml` (maps `easygerman.sinacodes.de` → `http://localhost:5001`, 404 fallback) + `<tunnel-id>.json` credentials (secret, never commit). Created via `cloudflared tunnel login` → `cloudflared tunnel create easy-german` → `cloudflared tunnel route dns easy-german easygerman.sinacodes.de`.
 - Both processes only run while the laptop is awake/online; `caffeinate -s` keeps it from sleeping. Not yet daemonised (no launchd service) and no Cloudflare Access wall in front — the app's own email/password auth is the only gate.
 
+**Restricted second host (same URL).** The tunnel URL is tied to the named tunnel + DNS, not to a machine, so a second machine can serve the same `easygerman.sinacodes.de` when the primary is offline — *not both at once*, since each host has its own SQLite DB. Run that host with `EASY_GERMAN_READONLY=1` (exported, or in its local dotenv file) for a read-only profile: login, browse the saved library, read/star words — no upload, audio, re-extract, or delete (see **Feature flags** above). It needs `data/easy-german.db` copied over so there are words to read, but not `data/audio/` while audio is disabled.
+
 Alternatives: zero-config quick tunnel `cloudflared tunnel --url http://localhost:5001` (random `*.trycloudflare.com` URL); on a VPS, Caddy with `reverse_proxy localhost:5001` auto-issues a Let's Encrypt cert.
 
 ## Auth + persistence (`app.py`, `db.py`)
@@ -129,11 +140,11 @@ Email + password accounts (no OAuth, no email verification, no password reset).
 
 ## Dependencies
 
-Backend (`requirements.txt`): `faster-whisper>=1.0.0`, `spacy>=3.7.0`, `wordfreq>=3.1.0`, `deep-translator>=1.11.4`, `flask>=3.0.0`. Plus the spaCy German model: `python -m spacy download de_core_news_sm`.
+Backend (`requirements.txt`): `faster-whisper>=1.0.0`, `spacy>=3.7.0`, `wordfreq>=3.1.0`, `deep-translator>=1.11.4`, `flask>=3.0.0`, `gunicorn>=21.0.0`, `python-dotenv>=1.0.0` (loads per-machine feature flags from a local dotenv file). Plus the spaCy German model: `python -m spacy download de_core_news_sm`.
 
 Frontend (`frontend/package.json`): `react`, `react-dom`, `react-router-dom` runtime; `vite`, `@vitejs/plugin-react` dev. Run `cd frontend && npm install` once.
 
 ## Repo conventions
 
 - `main` branch.
-- `.gitignore` excludes audio (`*.wav`, `*.mp3`, `*.m4a`, `*.ogg`, `*.flac`), generated vocab files (`vocab*.md`), `.vscode/`, `data/` (DB + audio + session token), and frontend build artefacts (`frontend/node_modules/`, `frontend/dist/`, `frontend/.vite/`). Don't commit those.
+- `.gitignore` excludes audio (`*.wav`, `*.mp3`, `*.m4a`, `*.ogg`, `*.flac`), generated vocab files (`vocab*.md`), `.vscode/`, `data/` (DB + audio + session token), the per-machine dotenv config file (feature flags — differs per host), and frontend build artefacts (`frontend/node_modules/`, `frontend/dist/`, `frontend/.vite/`). Don't commit those.

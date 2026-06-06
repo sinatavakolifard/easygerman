@@ -2,12 +2,14 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../api.js";
 import { useAuth } from "../AuthContext.jsx";
+import { useConfig } from "../ConfigContext.jsx";
 import ReextractPanel from "../components/ReextractPanel.jsx";
 import VocabResult from "../components/VocabResult.jsx";
 
 export default function ExtractionPage() {
   const { id } = useParams();
   const { user } = useAuth();
+  const { features } = useConfig();
   const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
@@ -89,7 +91,7 @@ export default function ExtractionPage() {
   if (error) return <p className="form-error">{error}</p>;
   if (!data) return <p>Loading…</p>;
 
-  const headerAction = (
+  const headerAction = features.delete ? (
     <button
       type="button"
       className="extraction-delete"
@@ -98,14 +100,18 @@ export default function ExtractionPage() {
     >
       {deleting ? "Deleting…" : "Delete extraction"}
     </button>
-  );
+  ) : null;
 
   return (
     <VocabResult
       data={data}
       currentUser={user}
       headerAction={headerAction}
-      controls={<ReextractPanel extraction={data} onUpdated={setData} />}
+      controls={
+        features.reextract ? (
+          <ReextractPanel extraction={data} onUpdated={setData} />
+        ) : null
+      }
       savedMap={savedMap}
       onToggleSave={onToggleSave}
       savingKey={savingKey}

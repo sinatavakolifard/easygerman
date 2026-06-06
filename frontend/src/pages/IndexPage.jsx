@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "../api.js";
 import { useAuth } from "../AuthContext.jsx";
+import { useConfig } from "../ConfigContext.jsx";
 import VocabResult from "../components/VocabResult.jsx";
 
 const FALLBACK_CONFIG = {
@@ -20,17 +21,12 @@ const FALLBACK_CONFIG = {
 
 export default function IndexPage() {
   const { user } = useAuth();
+  const { config: loadedConfig, features } = useConfig();
+  const config = loadedConfig || FALLBACK_CONFIG;
   const navigate = useNavigate();
-  const [config, setConfig] = useState(FALLBACK_CONFIG);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const [anonResult, setAnonResult] = useState(null);
-
-  useEffect(() => {
-    api.config().then(setConfig).catch(() => {
-      /* keep fallback */
-    });
-  }, []);
 
   const onSubmit = async (e) => {
     e.preventDefault();
@@ -53,6 +49,27 @@ export default function IndexPage() {
 
   if (anonResult) {
     return <VocabResult data={anonResult} currentUser={user} />;
+  }
+
+  if (!features.upload) {
+    return (
+      <>
+        <h1>Extract vocabulary</h1>
+        <p className="lede">
+          Uploading new audio is disabled on this server.{" "}
+          {user ? (
+            <>
+              You can still browse your <Link to="/library">library</Link> and{" "}
+              <Link to="/saved">saved words</Link>.
+            </>
+          ) : (
+            <>
+              <Link to="/login">Log in</Link> to read your saved library and words.
+            </>
+          )}
+        </p>
+      </>
+    );
   }
 
   return (

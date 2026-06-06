@@ -9,6 +9,7 @@ so the user can revisit past results from /library.
 from __future__ import annotations
 
 import logging
+import os
 import secrets
 import sqlite3
 import tempfile
@@ -17,6 +18,7 @@ import uuid
 from functools import wraps
 from pathlib import Path
 
+from dotenv import load_dotenv
 from flask import (
     Flask,
     abort,
@@ -39,6 +41,11 @@ from easy_german import (
     translate,
 )
 
+# Load configuration from a local dotenv file (if present) so per-machine
+# feature flags can live in a file instead of being exported on each launch.
+# Absent file → no-op, and real environment variables still take precedence.
+load_dotenv()
+
 ALLOWED_EXTS = {".wav", ".mp3", ".m4a", ".ogg", ".flac", ".mp4", ".webm"}
 MODEL_CHOICES = ["tiny", "base", "small", "medium", "large-v3"]
 
@@ -55,6 +62,32 @@ SESSION_TOKEN_PATH = DATA_DIR / "session_token"
 
 # Built React app (vite build output).
 FRONTEND_DIST = Path(__file__).resolve().parent / "frontend" / "dist"
+
+
+# ─── Feature flags (per-machine via environment) ─────────────────────────
+#
+# The same code runs on every machine; what differs is which write/heavy
+# actions are enabled. A "restricted" host (e.g. a second machine serving
+# the same tunnel URL) sets EASY_GERMAN_READONLY=1 to disable uploading,
+# audio playback/download, re-extraction, and deletion — leaving login,
+# reading saved extractions, and starring words intact. Individual flags
+# override the coarse READONLY default if you want a custom mix.
+
+
+def _flag(name: str, default: bool) -> bool:
+    v = os.getenv(name)
+    if v is None:
+        return default
+    return v.strip().lower() not in ("0", "false", "no", "off", "")
+
+
+READONLY = _flag("EASY_GERMAN_READONLY", False)
+FEATURES = {
+    "upload": _flag("EASY_GERMAN_UPLOAD", not READONLY),
+    "audio": _flag("EASY_GERMAN_AUDIO", not READONLY),
+    "reextract": _flag("EASY_GERMAN_REEXTRACT", not READONLY),
+    "delete": _flag("EASY_GERMAN_DELETE", not READONLY),
+}
 
 
 def _load_session_token() -> bytes:
@@ -118,6 +151,21 @@ def login_required(view):
     return wrapper
 
 
+def feature_required(name):
+    """Block an endpoint when its feature flag is disabled on this host."""
+
+    def decorator(view):
+        @wraps(view)
+        def wrapper(*args, **kwargs):
+            if not FEATURES.get(name, True):
+                return jsonify(error="This action is disabled on this server."), 403
+            return view(*args, **kwargs)
+
+        return wrapper
+
+    return decorator
+
+
 def _sweep_anon_audio():
     now = time.time()
     for f in ANON_AUDIO_DIR.iterdir():
@@ -154,6 +202,7 @@ def api_config():
         levels=[{"name": k, "max_zipf": v} for k, v in DIFFICULTY_LEVELS.items()],
         default_level=DEFAULT_LEVEL,
         allowed_extensions=sorted(ALLOWED_EXTS),
+        features=FEATURES,
     )
 
 
@@ -216,6 +265,7 @@ def api_logout():
 
 
 @app.route("/api/process", methods=["POST"])
+@feature_required("upload")
 def api_process():
     audio = request.files.get("audio")
     if not audio or not audio.filename:
@@ -370,6 +420,7 @@ def api_show_extraction(extraction_id):
 
 @app.route("/api/extractions/<int:extraction_id>", methods=["DELETE"])
 @login_required
+@feature_required("delete")
 def api_delete_extraction(extraction_id):
     db = get_db()
     row = db.execute(
@@ -388,6 +439,7 @@ def api_delete_extraction(extraction_id):
 
 @app.route("/api/extractions/<int:extraction_id>/reextract", methods=["POST"])
 @login_required
+@feature_required("reextract")
 def api_reextract(extraction_id):
     db = get_db()
     extraction = db.execute(
@@ -514,6 +566,7 @@ def api_delete_saved_word(word_id):
 
 
 @app.route("/audio/<token>")
+@feature_required("audio")
 def audio_file(token):
     # Saved (logged-in) extractions: check ownership in DB.
     row = get_db().execute(

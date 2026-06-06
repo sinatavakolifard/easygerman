@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { useConfig } from "../ConfigContext.jsx";
 
 function StarIcon({ filled }) {
   return (
@@ -23,6 +24,7 @@ export default function VocabResult({
   onToggleSave,
   savingKey,
 }) {
+  const { features } = useConfig();
   if (!data) return null;
   const {
     filename,
@@ -67,7 +69,7 @@ export default function VocabResult({
 
       {controls}
 
-      {audioUrl && (
+      {audioUrl && features.audio && (
         <audio className="player" controls preload="metadata" src={audioUrl}>
           Your browser does not support audio playback.
         </audio>
