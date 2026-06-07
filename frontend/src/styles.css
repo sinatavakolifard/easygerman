@@ -763,3 +763,59 @@ pre.error {
 
   details.transcript { padding: 10px 14px; }
 }
+
+/* ── Admin: user management table ───────────────────────────────────── */
+table.admin-table {
+  border-collapse: collapse;
+  width: 100%;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+table.admin-table th,
+table.admin-table td {
+  padding: 10px 14px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+table.admin-table thead th {
+  background: var(--thead-bg);
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+table.admin-table tbody tr:last-child td { border-bottom: none; }
+.admin-self { color: var(--fg-muted); }
+.admin-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.admin-actions button { width: auto; }
+
+@media (max-width: 640px) {
+  /* Reflow the admin table into stacked cards, like the vocab table. */
+  table.admin-table,
+  table.admin-table tbody,
+  table.admin-table tr,
+  table.admin-table td { display: block; width: 100%; }
+  table.admin-table thead { display: none; }
+  table.admin-table tr {
+    border-bottom: 1px solid var(--border);
+    padding: 6px 0;
+  }
+  table.admin-table td {
+    border-bottom: none;
+    padding: 4px 14px;
+  }
+  table.admin-table td::before {
+    content: attr(data-label);
+    display: inline-block;
+    min-width: 96px;
+    font-size: 13px;
+    color: var(--fg-muted);
+  }
+  .admin-actions { padding-top: 6px; }
+}

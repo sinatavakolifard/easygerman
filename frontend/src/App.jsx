@@ -6,12 +6,21 @@ import SignupPage from "./pages/SignupPage.jsx";
 import LibraryPage from "./pages/LibraryPage.jsx";
 import ExtractionPage from "./pages/ExtractionPage.jsx";
 import SavedWordsPage from "./pages/SavedWordsPage.jsx";
+import AdminPage from "./pages/AdminPage.jsx";
 import { useAuth } from "./AuthContext.jsx";
 
 function RequireAuth({ children }) {
   const { user } = useAuth();
   if (user === undefined) return null; // still loading /api/me
   if (user === null) return <Navigate to="/login" replace />;
+  return children;
+}
+
+function RequireAdmin({ children }) {
+  const { user } = useAuth();
+  if (user === undefined) return null; // still loading /api/me
+  if (user === null) return <Navigate to="/login" replace />;
+  if (!user.is_admin) return <Navigate to="/" replace />;
   return children;
 }
 
@@ -44,6 +53,14 @@ export default function App() {
             <RequireAuth>
               <SavedWordsPage />
             </RequireAuth>
+          }
+        />
+        <Route
+          path="admin"
+          element={
+            <RequireAdmin>
+              <AdminPage />
+            </RequireAdmin>
           }
         />
         <Route path="*" element={<Navigate to="/" replace />} />

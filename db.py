@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS users (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     email         TEXT    NOT NULL UNIQUE COLLATE NOCASE,
     password_hash TEXT    NOT NULL,
+    is_admin      INTEGER NOT NULL DEFAULT 0,
     created_at    TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -88,6 +89,13 @@ def init_db() -> None:
     conn = connect()
     try:
         conn.executescript(SCHEMA)
+        # Migrate DBs created before is_admin existed (CREATE TABLE IF NOT
+        # EXISTS won't add the column to an already-present table).
+        cols = [r["name"] for r in conn.execute("PRAGMA table_info(users)")]
+        if "is_admin" not in cols:
+            conn.execute(
+                "ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0"
+            )
         conn.commit()
     finally:
         conn.close()

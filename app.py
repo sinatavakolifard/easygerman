@@ -89,6 +89,10 @@ FEATURES = {
     "delete": _flag("EASY_GERMAN_DELETE", not READONLY),
 }
 
+# The account that's granted admin on startup (idempotent). Override per-host
+# with EASY_GERMAN_ADMIN_EMAIL; further admins are managed from the admin area.
+ADMIN_EMAIL = (os.getenv("EASY_GERMAN_ADMIN_EMAIL") or "s@gmail.com").strip().lower()
+
 
 def _load_session_token() -> bytes:
     if SESSION_TOKEN_PATH.exists():
@@ -105,6 +109,19 @@ app.config["SECRET_KEY"] = _load_session_token()
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 init_db()
+
+
+def _bootstrap_admin() -> None:
+    """Grant the configured admin email the admin flag (idempotent)."""
+    conn = db_connect()
+    try:
+        conn.execute("UPDATE users SET is_admin = 1 WHERE email = ?", (ADMIN_EMAIL,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+_bootstrap_admin()
 
 
 # ─── DB per-request connection ───────────────────────────────────────────
@@ -132,7 +149,7 @@ def _load_user():
     user_id = session.get("user_id")
     if user_id is not None:
         g.user = get_db().execute(
-            "SELECT id, email FROM users WHERE id = ?", (user_id,)
+            "SELECT id, email, is_admin FROM users WHERE id = ?", (user_id,)
         ).fetchone()
 
 
@@ -146,6 +163,18 @@ def login_required(view):
     def wrapper(*args, **kwargs):
         if g.user is None:
             return jsonify(error="Authentication required"), 401
+        return view(*args, **kwargs)
+
+    return wrapper
+
+
+def admin_required(view):
+    @wraps(view)
+    def wrapper(*args, **kwargs):
+        if g.user is None:
+            return jsonify(error="Authentication required"), 401
+        if not g.user["is_admin"]:
+            return jsonify(error="Admin access required"), 403
         return view(*args, **kwargs)
 
     return wrapper
@@ -210,7 +239,13 @@ def api_config():
 def api_me():
     if g.user is None:
         return jsonify(user=None)
-    return jsonify(user={"id": g.user["id"], "email": g.user["email"]})
+    return jsonify(
+        user={
+            "id": g.user["id"],
+            "email": g.user["email"],
+            "is_admin": bool(g.user["is_admin"]),
+        }
+    )
 
 
 @app.route("/api/auth/signup", methods=["POST"])
@@ -224,18 +259,19 @@ def api_signup():
         return jsonify(error="Please enter a valid email address."), 400
     if len(pw) < 8:
         return jsonify(error="Password must be at least 8 characters."), 400
+    is_admin = 1 if email == ADMIN_EMAIL else 0
     db = get_db()
     try:
         cur = db.execute(
-            "INSERT INTO users (email, password_hash) VALUES (?, ?)",
-            (email, generate_password_hash(pw)),
+            "INSERT INTO users (email, password_hash, is_admin) VALUES (?, ?, ?)",
+            (email, generate_password_hash(pw), is_admin),
         )
         db.commit()
     except sqlite3.IntegrityError:
         return jsonify(error="An account with that email already exists."), 400
     session.clear()
     session["user_id"] = cur.lastrowid
-    return jsonify(user={"id": cur.lastrowid, "email": email})
+    return jsonify(user={"id": cur.lastrowid, "email": email, "is_admin": bool(is_admin)})
 
 
 @app.route("/api/auth/login", methods=["POST"])
@@ -246,13 +282,15 @@ def api_login():
     email = (payload.get("email") or "").strip().lower()
     pw = payload.get("password") or ""
     row = get_db().execute(
-        "SELECT id, email, password_hash FROM users WHERE email = ?", (email,)
+        "SELECT id, email, password_hash, is_admin FROM users WHERE email = ?", (email,)
     ).fetchone()
     if row is None or not check_password_hash(row["password_hash"], pw):
         return jsonify(error="Invalid email or password."), 401
     session.clear()
     session["user_id"] = row["id"]
-    return jsonify(user={"id": row["id"], "email": row["email"]})
+    return jsonify(
+        user={"id": row["id"], "email": row["email"], "is_admin": bool(row["is_admin"])}
+    )
 
 
 @app.route("/api/auth/logout", methods=["POST"])
@@ -559,6 +597,93 @@ def api_delete_saved_word(word_id):
     db.commit()
     if cur.rowcount == 0:
         return jsonify(error="Not found"), 404
+    return jsonify(ok=True)
+
+
+# ─── Admin: user management ──────────────────────────────────────────────
+
+
+@app.route("/api/admin/users")
+@admin_required
+def api_admin_users():
+    rows = get_db().execute(
+        """SELECT u.id, u.email, u.created_at, u.is_admin,
+                  (SELECT COUNT(*) FROM extractions e WHERE e.user_id = u.id)
+                      AS extraction_count,
+                  (SELECT COUNT(*) FROM saved_words s WHERE s.user_id = u.id)
+                      AS saved_count
+           FROM users u
+           ORDER BY u.id"""
+    ).fetchall()
+    return jsonify(
+        users=[
+            {
+                "id": r["id"],
+                "email": r["email"],
+                "created_at": r["created_at"],
+                "is_admin": bool(r["is_admin"]),
+                "extraction_count": r["extraction_count"],
+                "saved_count": r["saved_count"],
+            }
+            for r in rows
+        ]
+    )
+
+
+@app.route("/api/admin/users/<int:user_id>", methods=["DELETE"])
+@admin_required
+def api_admin_delete_user(user_id):
+    if user_id == g.user["id"]:
+        return jsonify(error="You can't delete your own account here."), 400
+    db = get_db()
+    target = db.execute(
+        "SELECT id, is_admin FROM users WHERE id = ?", (user_id,)
+    ).fetchone()
+    if target is None:
+        return jsonify(error="Not found"), 404
+    if target["is_admin"]:
+        return jsonify(error="Can't delete an admin — demote them first."), 400
+    # Remove their audio files before the DB rows cascade away.
+    for row in db.execute(
+        "SELECT audio_token FROM extractions WHERE user_id = ?", (user_id,)
+    ).fetchall():
+        (AUDIO_DIR / row["audio_token"]).unlink(missing_ok=True)
+    # extractions / vocab_entries / saved_words follow via ON DELETE CASCADE.
+    db.execute("DELETE FROM users WHERE id = ?", (user_id,))
+    db.commit()
+    return jsonify(ok=True)
+
+
+@app.route("/api/admin/users/<int:user_id>/admin", methods=["POST"])
+@admin_required
+def api_admin_set_admin(user_id):
+    if user_id == g.user["id"]:
+        return jsonify(error="You can't change your own admin status."), 400
+    db = get_db()
+    if db.execute("SELECT id FROM users WHERE id = ?", (user_id,)).fetchone() is None:
+        return jsonify(error="Not found"), 404
+    payload = request.get_json(silent=True) or {}
+    make_admin = 1 if payload.get("is_admin") else 0
+    db.execute("UPDATE users SET is_admin = ? WHERE id = ?", (make_admin, user_id))
+    db.commit()
+    return jsonify(ok=True, is_admin=bool(make_admin))
+
+
+@app.route("/api/admin/users/<int:user_id>/password", methods=["POST"])
+@admin_required
+def api_admin_reset_password(user_id):
+    db = get_db()
+    if db.execute("SELECT id FROM users WHERE id = ?", (user_id,)).fetchone() is None:
+        return jsonify(error="Not found"), 404
+    payload = request.get_json(silent=True) or {}
+    pw = payload.get("password") or ""
+    if len(pw) < 8:
+        return jsonify(error="Password must be at least 8 characters."), 400
+    db.execute(
+        "UPDATE users SET password_hash = ? WHERE id = ?",
+        (generate_password_hash(pw), user_id),
+    )
+    db.commit()
     return jsonify(ok=True)
 
 

@@ -8,6 +8,7 @@ function NavItems({ user, onLogout }) {
     <>
       <Link to="/library">Library</Link>
       <Link to="/saved">Saved</Link>
+      {user.is_admin && <Link to="/admin">Admin</Link>}
       <span className="topbar-email">{user.email}</span>
       <form className="logout-form" onSubmit={onLogout}>
         <button type="submit" className="link-button">

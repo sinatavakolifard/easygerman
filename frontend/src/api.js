@@ -60,4 +60,17 @@ export const api = {
     }),
   deleteSavedWord: (id) =>
     jsonFetch(`/api/saved-words/${id}`, { method: "DELETE" }),
+  adminUsers: () => jsonFetch("/api/admin/users"),
+  adminDeleteUser: (id) =>
+    jsonFetch(`/api/admin/users/${id}`, { method: "DELETE" }),
+  adminSetAdmin: (id, isAdmin) =>
+    jsonFetch(`/api/admin/users/${id}/admin`, {
+      method: "POST",
+      body: JSON.stringify({ is_admin: isAdmin }),
+    }),
+  adminResetPassword: (id, password) =>
+    jsonFetch(`/api/admin/users/${id}/password`, {
+      method: "POST",
+      body: JSON.stringify({ password }),
+    }),
 };
