@@ -788,12 +788,44 @@ table.admin-table thead th {
 }
 table.admin-table tbody tr:last-child td { border-bottom: none; }
 .admin-self { color: var(--fg-muted); }
+.admin-table-wrap { overflow-x: auto; }
 .admin-actions {
   display: flex;
   gap: 8px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  align-items: center;
 }
-.admin-actions button { width: auto; }
+.admin-btn {
+  width: auto;
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--fg);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 6px 12px;
+  border-radius: 6px;
+  white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
+}
+.admin-btn:focus { outline: none; }
+.admin-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.admin-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.admin-btn--danger { color: var(--error-fg); }
+@media (hover: hover) and (pointer: fine) {
+  .admin-btn:hover:not(:disabled) {
+    background: none;
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .admin-btn--danger:hover:not(:disabled) {
+    border-color: var(--error-fg);
+    color: var(--error-fg);
+    background: var(--error-bg);
+  }
+}
 
 @media (max-width: 640px) {
   /* Reflow the admin table into stacked cards, like the vocab table. */

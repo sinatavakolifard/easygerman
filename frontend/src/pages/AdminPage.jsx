@@ -87,6 +87,7 @@ export default function AdminPage() {
       <p className="lede">{users.length} account{users.length === 1 ? "" : "s"}.</p>
       {error && <p className="form-error">{error}</p>}
 
+      <div className="admin-table-wrap">
       <table className="admin-table">
         <thead>
           <tr>
@@ -118,6 +119,7 @@ export default function AdminPage() {
                   <div className="admin-actions">
                     <button
                       type="button"
+                      className="admin-btn"
                       onClick={() => onResetPassword(u)}
                       disabled={busy}
                     >
@@ -125,6 +127,7 @@ export default function AdminPage() {
                     </button>
                     <button
                       type="button"
+                      className="admin-btn"
                       onClick={() => onToggleAdmin(u)}
                       disabled={busy || self}
                       title={self ? "You can't change your own role" : ""}
@@ -133,7 +136,7 @@ export default function AdminPage() {
                     </button>
                     <button
                       type="button"
-                      className="extraction-delete"
+                      className="admin-btn admin-btn--danger"
                       onClick={() => onDelete(u)}
                       disabled={busy || self || u.is_admin}
                       title={
@@ -153,6 +156,7 @@ export default function AdminPage() {
           })}
         </tbody>
       </table>
+      </div>
     </>
   );
 }
