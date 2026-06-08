@@ -4,7 +4,7 @@ import { api } from "../api.js";
 import { useConfig } from "../ConfigContext.jsx";
 
 export default function LibraryPage() {
-  const { features } = useConfig();
+  const { features, ready } = useConfig();
   const [extractions, setExtractions] = useState(null);
   const [error, setError] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
@@ -36,7 +36,7 @@ export default function LibraryPage() {
   };
 
   if (error) return <p className="form-error">{error}</p>;
-  if (extractions === null) return <p>Loading…</p>;
+  if (extractions === null || !ready) return <p>Loading…</p>;
 
   return (
     <>

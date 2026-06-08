@@ -24,7 +24,7 @@ export default function VocabResult({
   onToggleSave,
   savingKey,
 }) {
-  const { features } = useConfig();
+  const { features, ready } = useConfig();
   if (!data) return null;
   const {
     filename,
@@ -69,7 +69,7 @@ export default function VocabResult({
 
       {controls}
 
-      {audioUrl && features.audio && (
+      {audioUrl && ready && features.audio && (
         <audio className="player" controls preload="metadata" src={audioUrl}>
           Your browser does not support audio playback.
         </audio>

@@ -21,7 +21,7 @@ const FALLBACK_CONFIG = {
 
 export default function IndexPage() {
   const { user } = useAuth();
-  const { config: loadedConfig, features } = useConfig();
+  const { config: loadedConfig, features, ready } = useConfig();
   const config = loadedConfig || FALLBACK_CONFIG;
   const navigate = useNavigate();
   const [submitting, setSubmitting] = useState(false);
@@ -50,6 +50,10 @@ export default function IndexPage() {
   if (anonResult) {
     return <VocabResult data={anonResult} currentUser={user} />;
   }
+
+  // Wait for the real config before choosing form vs. disabled-notice, so a
+  // read-only host doesn't flash the upload form for a few frames first.
+  if (!ready) return null;
 
   if (!features.upload) {
     return (

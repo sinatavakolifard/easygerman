@@ -9,7 +9,7 @@ import VocabResult from "../components/VocabResult.jsx";
 export default function ExtractionPage() {
   const { id } = useParams();
   const { user } = useAuth();
-  const { features } = useConfig();
+  const { features, ready } = useConfig();
   const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
@@ -89,7 +89,7 @@ export default function ExtractionPage() {
   };
 
   if (error) return <p className="form-error">{error}</p>;
-  if (!data) return <p>Loading…</p>;
+  if (!data || !ready) return <p>Loading…</p>;
 
   const headerAction = features.delete ? (
     <button
