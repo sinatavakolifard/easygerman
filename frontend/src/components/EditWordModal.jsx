@@ -55,6 +55,7 @@ export default function EditWordModal({ word, onSave, onCancel, saving }) {
             <span>Article</span>
             <input
               ref={firstRef}
+              type="text"
               value={article}
               placeholder="der / die / das"
               onChange={(e) => setArticle(e.target.value)}
@@ -62,12 +63,20 @@ export default function EditWordModal({ word, onSave, onCancel, saving }) {
           </label>
           <label className="modal-field">
             <span>Word</span>
-            <input value={lemma} onChange={(e) => setLemma(e.target.value)} />
+            <input
+              type="text"
+              value={lemma}
+              onChange={(e) => setLemma(e.target.value)}
+            />
           </label>
         </div>
         <label className="modal-field">
           <span>Meaning</span>
-          <input value={meaning} onChange={(e) => setMeaning(e.target.value)} />
+          <input
+            type="text"
+            value={meaning}
+            onChange={(e) => setMeaning(e.target.value)}
+          />
         </label>
         <label className="modal-field">
           <span>Example</span>
