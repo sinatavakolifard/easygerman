@@ -2,11 +2,13 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api.js";
 import { useConfig } from "../ConfigContext.jsx";
+import Toast from "../components/Toast.jsx";
 
 export default function LibraryPage() {
   const { features, ready } = useConfig();
   const [extractions, setExtractions] = useState(null);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState(null); // fatal: library failed to load
+  const [notice, setNotice] = useState(null); // transient: action failed
   const [deletingId, setDeletingId] = useState(null);
 
   useEffect(() => {
@@ -29,7 +31,8 @@ export default function LibraryPage() {
       await api.deleteExtraction(e.id);
       setExtractions((rows) => rows.filter((r) => r.id !== e.id));
     } catch (err) {
-      setError(err.message || "Failed to delete extraction");
+      // Non-fatal: keep the library list on screen.
+      setNotice(err.message || "Couldn't delete the extraction.");
     } finally {
       setDeletingId(null);
     }
@@ -80,6 +83,7 @@ export default function LibraryPage() {
           ))}
         </ul>
       )}
+      <Toast message={notice} onClose={() => setNotice(null)} />
     </>
   );
 }

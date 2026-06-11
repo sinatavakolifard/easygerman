@@ -5,6 +5,7 @@ import { useAuth } from "../AuthContext.jsx";
 import { useConfig } from "../ConfigContext.jsx";
 import ReextractPanel from "../components/ReextractPanel.jsx";
 import VocabResult from "../components/VocabResult.jsx";
+import Toast from "../components/Toast.jsx";
 
 export default function ExtractionPage() {
   const { id } = useParams();
@@ -12,7 +13,8 @@ export default function ExtractionPage() {
   const { features, ready } = useConfig();
   const navigate = useNavigate();
   const [data, setData] = useState(null);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState(null); // fatal: extraction failed to load
+  const [notice, setNotice] = useState(null); // transient: action failed
   const [deleting, setDeleting] = useState(false);
   const [savedMap, setSavedMap] = useState(new Map());
   const [savingKey, setSavingKey] = useState(null);
@@ -64,7 +66,8 @@ export default function ExtractionPage() {
         setSavedMap(next);
       }
     } catch (err) {
-      setError(err.message || "Failed to update saved words");
+      // Non-fatal: keep the vocab on screen, just flag that the save failed.
+      setNotice(err.message || "Couldn't update saved words.");
     } finally {
       setSavingKey(null);
     }
@@ -83,7 +86,7 @@ export default function ExtractionPage() {
       await api.deleteExtraction(id);
       navigate("/library");
     } catch (err) {
-      setError(err.message || "Failed to delete extraction");
+      setNotice(err.message || "Couldn't delete the extraction.");
       setDeleting(false);
     }
   };
@@ -103,18 +106,21 @@ export default function ExtractionPage() {
   ) : null;
 
   return (
-    <VocabResult
-      data={data}
-      currentUser={user}
-      headerAction={headerAction}
-      controls={
-        features.reextract ? (
-          <ReextractPanel extraction={data} onUpdated={setData} />
-        ) : null
-      }
-      savedMap={savedMap}
-      onToggleSave={onToggleSave}
-      savingKey={savingKey}
-    />
+    <>
+      <VocabResult
+        data={data}
+        currentUser={user}
+        headerAction={headerAction}
+        controls={
+          features.reextract ? (
+            <ReextractPanel extraction={data} onUpdated={setData} />
+          ) : null
+        }
+        savedMap={savedMap}
+        onToggleSave={onToggleSave}
+        savingKey={savingKey}
+      />
+      <Toast message={notice} onClose={() => setNotice(null)} />
+    </>
   );
 }

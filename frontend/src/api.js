@@ -1,17 +1,28 @@
 // Thin wrapper around fetch — same-origin cookies, JSON helpers, multipart.
 
 async function jsonFetch(path, opts = {}) {
-  const res = await fetch(path, {
-    credentials: "include",
-    headers: {
-      Accept: "application/json",
-      ...(opts.body && !(opts.body instanceof FormData)
-        ? { "Content-Type": "application/json" }
-        : {}),
-      ...(opts.headers || {}),
-    },
-    ...opts,
-  });
+  let res;
+  try {
+    res = await fetch(path, {
+      credentials: "include",
+      headers: {
+        Accept: "application/json",
+        ...(opts.body && !(opts.body instanceof FormData)
+          ? { "Content-Type": "application/json" }
+          : {}),
+        ...(opts.headers || {}),
+      },
+      ...opts,
+    });
+  } catch {
+    // fetch() rejects (rather than returning a response) when the network is
+    // unreachable — surface a human message instead of the raw "NetworkError".
+    const err = new Error(
+      "You appear to be offline — check your connection and try again."
+    );
+    err.offline = true;
+    throw err;
+  }
   let data = null;
   try {
     data = await res.json();

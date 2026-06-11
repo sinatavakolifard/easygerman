@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api.js";
+import Toast from "../components/Toast.jsx";
 
 export default function SavedWordsPage() {
   const [words, setWords] = useState(null);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState(null); // fatal: list failed to load
+  const [notice, setNotice] = useState(null); // transient: action failed
   const [removingId, setRemovingId] = useState(null);
 
   useEffect(() => {
@@ -27,7 +29,8 @@ export default function SavedWordsPage() {
       await api.deleteSavedWord(w.id);
       setWords((rows) => rows.filter((r) => r.id !== w.id));
     } catch (err) {
-      setError(err.message || "Failed to remove word");
+      // Non-fatal: keep the list on screen.
+      setNotice(err.message || "Couldn't remove the word.");
     } finally {
       setRemovingId(null);
     }
@@ -90,6 +93,7 @@ export default function SavedWordsPage() {
           ))}
         </ul>
       )}
+      <Toast message={notice} onClose={() => setNotice(null)} />
     </>
   );
 }
