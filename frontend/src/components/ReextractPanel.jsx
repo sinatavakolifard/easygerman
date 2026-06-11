@@ -92,7 +92,7 @@ export default function ReextractPanel({ extraction, onUpdated }) {
             <small>0 = no cap.</small>
           </label>
         </div>
-        <button type="submit" disabled={submitting}>
+        <button type="submit" className="btn-primary" disabled={submitting}>
           {submitting ? "Re-extracting…" : "Re-extract"}
         </button>
         <p className="hint">

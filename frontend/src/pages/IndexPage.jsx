@@ -153,7 +153,7 @@ export default function IndexPage() {
           </label>
         </div>
 
-        <button type="submit" disabled={submitting}>
+        <button type="submit" className="btn-primary" disabled={submitting}>
           {submitting ? "Processing…" : "Extract vocabulary"}
         </button>
         <p className="hint">

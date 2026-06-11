@@ -54,7 +54,7 @@ export default function SignupPage() {
           />
           <small>At least 8 characters.</small>
         </label>
-        <button type="submit" disabled={submitting}>
+        <button type="submit" className="btn-primary" disabled={submitting}>
           {submitting ? "Creating account…" : "Sign up"}
         </button>
       </form>

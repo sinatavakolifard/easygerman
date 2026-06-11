@@ -52,7 +52,7 @@ export default function LoginPage() {
             required
           />
         </label>
-        <button type="submit" disabled={submitting}>
+        <button type="submit" className="btn-primary" disabled={submitting}>
           {submitting ? "Logging in…" : "Log in"}
         </button>
       </form>
