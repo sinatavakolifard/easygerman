@@ -11,6 +11,7 @@ const DEFAULT_FEATURES = {
   audio: true,
   reextract: true,
   delete: true,
+  edit: true,
 };
 
 const ConfigContext = createContext({

@@ -236,6 +236,7 @@ input[type=number],
 input[type=text],
 input[type=email],
 input[type=password],
+textarea,
 select {
   font: inherit;
   padding: 8px 10px;
@@ -244,10 +245,12 @@ select {
   background: var(--input-bg);
   color: var(--fg);
 }
+textarea { resize: vertical; }
 input[type=text]:focus,
 input[type=email]:focus,
 input[type=password]:focus,
 input[type=number]:focus,
+textarea:focus,
 select:focus {
   outline: none;
   border-color: var(--accent);
@@ -338,6 +341,10 @@ table.vocab .lemma .article {
   font-weight: 400;
   margin-right: 2px;
 }
+/* Desktop: the cell stays a normal table-cell (vertical-align: top, so the
+   word lines up with the other columns). The word comes first in the DOM and
+   the edit + save icons follow it inline. Mobile (below) switches the cell to
+   flex so the icons get pushed to the card's right edge. */
 
 .save-toggle {
   background: none;
@@ -345,7 +352,7 @@ table.vocab .lemma .article {
   color: var(--fg-muted);
   cursor: pointer;
   padding: 0;
-  margin-right: 6px;
+  margin-left: 6px;
   display: inline-flex;
   align-items: center;
   vertical-align: middle;
@@ -353,6 +360,23 @@ table.vocab .lemma .article {
 }
 .save-toggle svg { width: 16px; height: 16px; display: block; }
 .save-toggle.saved { color: var(--accent); }
+
+.edit-toggle {
+  background: none;
+  border: none;
+  color: var(--fg-muted);
+  cursor: pointer;
+  padding: 0;
+  margin-left: 6px;
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  -webkit-tap-highlight-color: transparent;
+}
+.edit-toggle svg { width: 16px; height: 16px; display: block; }
+@media (hover: hover) and (pointer: fine) {
+  .edit-toggle:hover { color: var(--accent); }
+}
 .save-toggle:disabled { opacity: 0.5; cursor: wait; }
 .save-toggle:focus { outline: none; }
 .save-toggle:focus-visible {
@@ -370,6 +394,15 @@ table.vocab .example-en {
   font-style: italic;
   color: var(--fg-muted);
 }
+/* Desktop: a narrow trailing column holds the edit + save icons. The inline
+   copy inside the lemma cell is hidden here and only shown on mobile. */
+table.vocab th.row-actions-h,
+table.vocab td.row-actions {
+  width: 1%;
+  white-space: nowrap;
+  text-align: right;
+}
+table.vocab td.lemma .lemma-actions { display: none; }
 
 details.reextract-panel {
   margin: 0 0 20px;
@@ -579,6 +612,7 @@ pre.error {
   gap: 12px;
 }
 .saved-content { flex: 1; min-width: 0; }
+.card-actions { display: flex; gap: 8px; flex-shrink: 0; }
 .saved-lemma {
   font-weight: 600;
   font-size: 17px;
@@ -670,7 +704,7 @@ pre.error {
     gap: 10px;
   }
   .extraction-card .extraction-delete,
-  .saved-card .extraction-delete {
+  .saved-card .card-actions {
     align-self: flex-end;
   }
 
@@ -740,11 +774,15 @@ pre.error {
     gap: 8px;
   }
   table.vocab td.lemma .lemma-text { flex: 1; min-width: 0; }
-  table.vocab td.lemma .save-toggle {
-    order: 1;
-    margin: 0;
-  }
-  table.vocab td.lemma .save-toggle svg { width: 22px; height: 22px; }
+  /* Phone: show the inline icons (in the lemma line) and hide the desktop
+     trailing column, so the icons sit next to the word as before. */
+  table.vocab td.lemma .lemma-actions { display: flex; align-items: center; gap: 8px; }
+  table.vocab td.lemma .lemma-actions .save-toggle,
+  table.vocab td.lemma .lemma-actions .edit-toggle { margin: 0; }
+  table.vocab td.lemma .lemma-actions .save-toggle svg,
+  table.vocab td.lemma .lemma-actions .edit-toggle svg { width: 22px; height: 22px; }
+  table.vocab th.row-actions-h,
+  table.vocab td.row-actions { display: none; }
   /* POS + count rendered inline as a single "noun · 3×" tag line */
   table.vocab td.pos,
   table.vocab td.count {
@@ -939,7 +977,12 @@ table.admin-table tbody tr:last-child td { border-bottom: none; }
   font-size: 14px;
   font-weight: 600;
 }
-.modal-field input { width: 100%; }
+.modal-field input,
+.modal-field textarea { width: 100%; }
+.modal--wide { max-width: 520px; }
+.modal-row { display: flex; gap: 14px; }
+.modal-row .modal-field { flex: 1; }
+.modal-row .modal-field--sm { flex: 0 0 110px; }
 .modal-error {
   margin: -8px 0 16px;
   color: var(--error-fg);

@@ -63,6 +63,16 @@ export const api = {
       method: "POST",
       body: JSON.stringify(params),
     }),
+  editVocab: (extractionId, entryId, fields) =>
+    jsonFetch(`/api/extractions/${extractionId}/vocab/${entryId}`, {
+      method: "PATCH",
+      body: JSON.stringify(fields),
+    }),
+  editSavedWord: (id, fields) =>
+    jsonFetch(`/api/saved-words/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(fields),
+    }),
   savedWords: () => jsonFetch("/api/saved-words"),
   saveWord: (word) =>
     jsonFetch("/api/saved-words", {

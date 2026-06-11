@@ -2,14 +2,19 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api.js";
 import Toast from "../components/Toast.jsx";
+import EditWordModal from "../components/EditWordModal.jsx";
 import { useConfirm } from "../components/ConfirmProvider.jsx";
+import { useConfig } from "../ConfigContext.jsx";
 
 export default function SavedWordsPage() {
   const confirm = useConfirm();
+  const { features } = useConfig();
   const [words, setWords] = useState(null);
   const [error, setError] = useState(null); // fatal: list failed to load
   const [notice, setNotice] = useState(null); // transient: action failed
   const [removingId, setRemovingId] = useState(null);
+  const [editing, setEditing] = useState(null); // saved word being edited
+  const [savingEdit, setSavingEdit] = useState(false);
 
   useEffect(() => {
     api
@@ -35,6 +40,20 @@ export default function SavedWordsPage() {
       setNotice(err.message || "Couldn't remove the word.");
     } finally {
       setRemovingId(null);
+    }
+  };
+
+  const onSaveEdit = async (fields) => {
+    if (!editing) return;
+    setSavingEdit(true);
+    try {
+      const { word } = await api.editSavedWord(editing.id, fields);
+      setWords((rows) => rows.map((r) => (r.id === word.id ? word : r)));
+      setEditing(null);
+    } catch (err) {
+      setNotice(err.message || "Couldn't save the edit.");
+    } finally {
+      setSavingEdit(false);
     }
   };
 
@@ -82,18 +101,38 @@ export default function SavedWordsPage() {
                   &nbsp;·&nbsp; saved {w.saved_at}
                 </p>
               </div>
-              <button
-                type="button"
-                className="extraction-delete"
-                onClick={() => onRemove(w)}
-                disabled={removingId === w.id}
-                aria-label={`Remove ${w.lemma}`}
-              >
-                {removingId === w.id ? "Removing…" : "Remove"}
-              </button>
+              <div className="card-actions">
+                {features.edit && (
+                  <button
+                    type="button"
+                    className="admin-btn"
+                    onClick={() => setEditing(w)}
+                    aria-label={`Edit ${w.lemma}`}
+                  >
+                    Edit
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="extraction-delete"
+                  onClick={() => onRemove(w)}
+                  disabled={removingId === w.id}
+                  aria-label={`Remove ${w.lemma}`}
+                >
+                  {removingId === w.id ? "Removing…" : "Remove"}
+                </button>
+              </div>
             </li>
           ))}
         </ul>
+      )}
+      {editing && (
+        <EditWordModal
+          word={editing}
+          saving={savingEdit}
+          onSave={onSaveEdit}
+          onCancel={() => setEditing(null)}
+        />
       )}
       <Toast message={notice} onClose={() => setNotice(null)} />
     </>

@@ -87,6 +87,7 @@ FEATURES = {
     "audio": _flag("EASY_GERMAN_AUDIO", not READONLY),
     "reextract": _flag("EASY_GERMAN_REEXTRACT", not READONLY),
     "delete": _flag("EASY_GERMAN_DELETE", not READONLY),
+    "edit": _flag("EASY_GERMAN_EDIT", not READONLY),
 }
 
 # The account that's granted admin on startup (idempotent). Override per-host
@@ -451,7 +452,8 @@ def api_show_extraction(extraction_id):
         transcript=extraction["transcript"] or "",
         audio_token=extraction["audio_token"],
         created_at=extraction["created_at"],
-        vocab=[_vocab_to_dict(v) for v in vocab],
+        # Include the vocab_entries row id so the client can target edits.
+        vocab=[{**_vocab_to_dict(v), "id": r["id"]} for v, r in zip(vocab, rows)],
         anonymous=False,
     )
 
@@ -533,6 +535,75 @@ def api_reextract(extraction_id):
     return api_show_extraction(extraction_id)
 
 
+# ─── Editing words ───────────────────────────────────────────────────────
+#
+# A word can live in two places: a `vocab_entries` row (inside an extraction)
+# and a `saved_words` row (if the user starred it). They're linked by
+# (user_id, lemma, pos). Editing from either side updates BOTH — and every
+# other occurrence of the same word in the user's other extractions — so the
+# word and its meaning stay consistent everywhere. Deleting an extraction
+# still leaves the saved word untouched (saved_words only cascades from users).
+
+
+def _read_edit_fields(payload):
+    return {
+        "article": (payload.get("article") or "").strip(),
+        "lemma": (payload.get("lemma") or "").strip(),
+        "meaning": (payload.get("meaning") or "").strip(),
+        "example": (payload.get("example") or "").strip(),
+        "example_translation": (payload.get("example_translation") or "").strip(),
+    }
+
+
+def _sync_word_edit(db, user_id, old_lemma, old_pos, f):
+    """Apply edited fields to every vocab_entries + saved_words row of this
+    user matching the word's *old* (lemma, pos). pos is not editable, so it
+    stays the join key; lemma moves to its new value across all linked rows."""
+    db.execute(
+        """UPDATE vocab_entries
+              SET lemma = ?, article = ?, meaning = ?, example = ?,
+                  example_translation = ?
+            WHERE pos = ? AND lemma = ?
+              AND extraction_id IN (SELECT id FROM extractions WHERE user_id = ?)""",
+        (f["lemma"], f["article"], f["meaning"], f["example"],
+         f["example_translation"], old_pos, old_lemma, user_id),
+    )
+    db.execute(
+        """UPDATE saved_words
+              SET lemma = ?, article = ?, meaning = ?, example = ?,
+                  example_translation = ?
+            WHERE user_id = ? AND pos = ? AND lemma = ?""",
+        (f["lemma"], f["article"], f["meaning"], f["example"],
+         f["example_translation"], user_id, old_pos, old_lemma),
+    )
+
+
+@app.route("/api/extractions/<int:extraction_id>/vocab/<int:entry_id>", methods=["PATCH"])
+@login_required
+@feature_required("edit")
+def api_edit_vocab(extraction_id, entry_id):
+    db = get_db()
+    row = db.execute(
+        """SELECT v.lemma, v.pos
+             FROM vocab_entries v
+             JOIN extractions e ON e.id = v.extraction_id
+            WHERE v.id = ? AND v.extraction_id = ? AND e.user_id = ?""",
+        (entry_id, extraction_id, g.user["id"]),
+    ).fetchone()
+    if row is None:
+        return jsonify(error="Not found"), 404
+    f = _read_edit_fields(request.get_json(silent=True) or {})
+    if not f["lemma"]:
+        return jsonify(error="The word can't be empty."), 400
+    try:
+        _sync_word_edit(db, g.user["id"], row["lemma"], row["pos"], f)
+        db.commit()
+    except sqlite3.IntegrityError:
+        db.rollback()
+        return jsonify(error="A saved word with that spelling already exists."), 400
+    return api_show_extraction(extraction_id)
+
+
 # ─── Saved words ────────────────────────────────────────────────────────
 
 
@@ -598,6 +669,35 @@ def api_delete_saved_word(word_id):
     if cur.rowcount == 0:
         return jsonify(error="Not found"), 404
     return jsonify(ok=True)
+
+
+@app.route("/api/saved-words/<int:word_id>", methods=["PATCH"])
+@login_required
+@feature_required("edit")
+def api_edit_saved_word(word_id):
+    db = get_db()
+    row = db.execute(
+        "SELECT lemma, pos FROM saved_words WHERE id = ? AND user_id = ?",
+        (word_id, g.user["id"]),
+    ).fetchone()
+    if row is None:
+        return jsonify(error="Not found"), 404
+    f = _read_edit_fields(request.get_json(silent=True) or {})
+    if not f["lemma"]:
+        return jsonify(error="The word can't be empty."), 400
+    try:
+        _sync_word_edit(db, g.user["id"], row["lemma"], row["pos"], f)
+        db.commit()
+    except sqlite3.IntegrityError:
+        db.rollback()
+        return jsonify(error="A saved word with that spelling already exists."), 400
+    updated = db.execute(
+        """SELECT id, lemma, pos, article, meaning, example,
+                  example_translation, source_filename, saved_at
+           FROM saved_words WHERE id = ?""",
+        (word_id,),
+    ).fetchone()
+    return jsonify(word=dict(updated))
 
 
 # ─── Admin: user management ──────────────────────────────────────────────

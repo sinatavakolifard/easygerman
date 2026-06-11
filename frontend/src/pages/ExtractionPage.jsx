@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../api.js";
 import { useAuth } from "../AuthContext.jsx";
@@ -6,6 +6,7 @@ import { useConfig } from "../ConfigContext.jsx";
 import ReextractPanel from "../components/ReextractPanel.jsx";
 import VocabResult from "../components/VocabResult.jsx";
 import Toast from "../components/Toast.jsx";
+import EditWordModal from "../components/EditWordModal.jsx";
 import { useConfirm } from "../components/ConfirmProvider.jsx";
 
 export default function ExtractionPage() {
@@ -20,6 +21,8 @@ export default function ExtractionPage() {
   const [deleting, setDeleting] = useState(false);
   const [savedMap, setSavedMap] = useState(new Map());
   const [savingKey, setSavingKey] = useState(null);
+  const [editing, setEditing] = useState(null); // vocab entry being edited
+  const [savingEdit, setSavingEdit] = useState(false);
 
   useEffect(() => {
     setData(null);
@@ -30,7 +33,7 @@ export default function ExtractionPage() {
       .catch((e) => setError(e.message || "Failed to load extraction"));
   }, [id]);
 
-  useEffect(() => {
+  const loadSavedWords = useCallback(() => {
     if (!user) return;
     api
       .savedWords()
@@ -41,6 +44,10 @@ export default function ExtractionPage() {
       })
       .catch(() => { /* non-fatal; user just won't see saved state */ });
   }, [user]);
+
+  useEffect(() => {
+    loadSavedWords();
+  }, [loadSavedWords]);
 
   const onToggleSave = async (v) => {
     const key = `${v.lemma}|${v.pos}`;
@@ -93,6 +100,22 @@ export default function ExtractionPage() {
     }
   };
 
+  const onSaveEdit = async (fields) => {
+    if (!editing) return;
+    setSavingEdit(true);
+    try {
+      const updated = await api.editVocab(id, editing.id, fields);
+      setData(updated);
+      // lemma/meaning may have changed → refresh the saved-state map.
+      loadSavedWords();
+      setEditing(null);
+    } catch (err) {
+      setNotice(err.message || "Couldn't save the edit.");
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
   if (error) return <p className="form-error">{error}</p>;
   if (!data || !ready) return <p>Loading…</p>;
 
@@ -121,7 +144,16 @@ export default function ExtractionPage() {
         savedMap={savedMap}
         onToggleSave={onToggleSave}
         savingKey={savingKey}
+        onEditWord={features.edit ? setEditing : undefined}
       />
+      {editing && (
+        <EditWordModal
+          word={editing}
+          saving={savingEdit}
+          onSave={onSaveEdit}
+          onCancel={() => setEditing(null)}
+        />
+      )}
       <Toast message={notice} onClose={() => setNotice(null)} />
     </>
   );

@@ -11,6 +11,58 @@ function StarIcon({ filled }) {
   );
 }
 
+function PencilIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+         strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
+    </svg>
+  );
+}
+
+// The per-row edit + save buttons. Rendered twice per row: once in a hidden
+// inline copy inside the lemma cell (shown on mobile, where the table reflows
+// to cards) and once in the trailing actions column (shown on desktop). CSS
+// shows exactly one per breakpoint — a `position: absolute` <td> can't be
+// pinned reliably in a reflowed table, so we duplicate instead.
+function ActionButtons({ v, saved, busy, onEditWord, onToggleSave }) {
+  return (
+    <>
+      {onEditWord && (
+        <button
+          type="button"
+          className="edit-toggle"
+          onClick={(e) => {
+            onEditWord(v);
+            e.currentTarget.blur();
+          }}
+          aria-label={`Edit ${v.lemma}`}
+          title="Edit word"
+        >
+          <PencilIcon />
+        </button>
+      )}
+      {onToggleSave && (
+        <button
+          type="button"
+          className={`save-toggle ${saved ? "saved" : ""}`}
+          onClick={(e) => {
+            onToggleSave(v);
+            e.currentTarget.blur();
+          }}
+          disabled={busy}
+          aria-pressed={saved}
+          aria-label={saved ? `Unsave ${v.lemma}` : `Save ${v.lemma}`}
+          title={saved ? "Remove from saved words" : "Save word"}
+        >
+          <StarIcon filled={saved} />
+        </button>
+      )}
+    </>
+  );
+}
+
 function vocabKey(v) {
   return `${v.lemma}|${v.pos}`;
 }
@@ -23,6 +75,7 @@ export default function VocabResult({
   savedMap,
   onToggleSave,
   savingKey,
+  onEditWord,
 }) {
   const { features, ready } = useConfig();
   if (!data) return null;
@@ -84,6 +137,9 @@ export default function VocabResult({
               <th>Count</th>
               <th>Meaning</th>
               <th>Example</th>
+              {(onToggleSave || onEditWord) && (
+                <th className="row-actions-h" aria-label="Actions"></th>
+              )}
             </tr>
           </thead>
           <tbody>
@@ -94,27 +150,22 @@ export default function VocabResult({
               return (
               <tr key={i}>
                 <td className="lemma">
-                  {onToggleSave && (
-                    <button
-                      type="button"
-                      className={`save-toggle ${saved ? "saved" : ""}`}
-                      onClick={(e) => {
-                        onToggleSave(v);
-                        e.currentTarget.blur();
-                      }}
-                      disabled={busy}
-                      aria-pressed={saved}
-                      aria-label={saved ? `Unsave ${v.lemma}` : `Save ${v.lemma}`}
-                      title={saved ? "Remove from saved words" : "Save word"}
-                    >
-                      <StarIcon filled={saved} />
-                    </button>
-                  )}
                   <span className="lemma-text">
                     {v.article && <span className="article">{v.article}</span>}
                     {v.article ? " " : ""}
                     {v.lemma}
                   </span>
+                  {(onEditWord || onToggleSave) && (
+                    <span className="lemma-actions">
+                      <ActionButtons
+                        v={v}
+                        saved={saved}
+                        busy={busy}
+                        onEditWord={onEditWord}
+                        onToggleSave={onToggleSave}
+                      />
+                    </span>
+                  )}
                 </td>
                 <td className="pos">{v.pos}</td>
                 <td className="count">{v.count}</td>
@@ -125,6 +176,17 @@ export default function VocabResult({
                     <div className="example-en">{v.example_translation}</div>
                   )}
                 </td>
+                {(onEditWord || onToggleSave) && (
+                  <td className="row-actions">
+                    <ActionButtons
+                      v={v}
+                      saved={saved}
+                      busy={busy}
+                      onEditWord={onEditWord}
+                      onToggleSave={onToggleSave}
+                    />
+                  </td>
+                )}
               </tr>
               );
             })}
