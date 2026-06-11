@@ -1,11 +1,16 @@
 import { useEffect, useState } from "react";
 import { api } from "../api.js";
 import { useAuth } from "../AuthContext.jsx";
+import { useConfirm, usePrompt } from "../components/ConfirmProvider.jsx";
+import Toast from "../components/Toast.jsx";
 
 export default function AdminPage() {
   const { user } = useAuth();
+  const confirm = useConfirm();
+  const prompt = usePrompt();
   const [users, setUsers] = useState(null);
   const [error, setError] = useState(null);
+  const [notice, setNotice] = useState(null);
   const [busyId, setBusyId] = useState(null);
 
   useEffect(() => {
@@ -16,14 +21,15 @@ export default function AdminPage() {
   }, []);
 
   const onDelete = async (u) => {
-    if (
-      !window.confirm(
+    const ok = await confirm({
+      title: "Delete user",
+      message:
         `Delete ${u.email}? This removes their ${u.extraction_count} extraction(s), ` +
-          `saved words, and audio files. This can't be undone.`
-      )
-    ) {
-      return;
-    }
+        `saved words, and audio files. This can't be undone.`,
+      confirmLabel: "Delete user",
+      danger: true,
+    });
+    if (!ok) return;
     setBusyId(u.id);
     setError(null);
     try {
@@ -38,13 +44,12 @@ export default function AdminPage() {
 
   const onToggleAdmin = async (u) => {
     const next = !u.is_admin;
-    if (
-      !window.confirm(
-        `${next ? "Promote" : "Demote"} ${u.email} ${next ? "to" : "from"} admin?`
-      )
-    ) {
-      return;
-    }
+    const ok = await confirm({
+      title: next ? "Promote to admin" : "Demote from admin",
+      message: `${next ? "Promote" : "Demote"} ${u.email} ${next ? "to" : "from"} admin?`,
+      confirmLabel: next ? "Promote" : "Demote",
+    });
+    if (!ok) return;
     setBusyId(u.id);
     setError(null);
     try {
@@ -60,17 +65,21 @@ export default function AdminPage() {
   };
 
   const onResetPassword = async (u) => {
-    const pw = window.prompt(`New password for ${u.email} (min 8 characters):`);
+    const pw = await prompt({
+      title: "Reset password",
+      message: `Set a new password for ${u.email}.`,
+      label: "New password",
+      inputType: "password",
+      confirmLabel: "Set password",
+      validate: (v) =>
+        v.length < 8 ? "Password must be at least 8 characters." : null,
+    });
     if (pw == null) return; // cancelled
-    if (pw.length < 8) {
-      setError("Password must be at least 8 characters.");
-      return;
-    }
     setBusyId(u.id);
     setError(null);
     try {
       await api.adminResetPassword(u.id, pw);
-      window.alert(`Password updated for ${u.email}.`);
+      setNotice(`Password updated for ${u.email}.`);
     } catch (e) {
       setError(e.message || "Failed to reset password");
     } finally {
@@ -157,6 +166,7 @@ export default function AdminPage() {
         </tbody>
       </table>
       </div>
+      <Toast message={notice} type="success" onClose={() => setNotice(null)} />
     </>
   );
 }

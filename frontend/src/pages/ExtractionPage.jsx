@@ -6,11 +6,13 @@ import { useConfig } from "../ConfigContext.jsx";
 import ReextractPanel from "../components/ReextractPanel.jsx";
 import VocabResult from "../components/VocabResult.jsx";
 import Toast from "../components/Toast.jsx";
+import { useConfirm } from "../components/ConfirmProvider.jsx";
 
 export default function ExtractionPage() {
   const { id } = useParams();
   const { user } = useAuth();
   const { features, ready } = useConfig();
+  const confirm = useConfirm();
   const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [error, setError] = useState(null); // fatal: extraction failed to load
@@ -74,13 +76,13 @@ export default function ExtractionPage() {
   };
 
   const onDelete = async () => {
-    if (
-      !window.confirm(
-        `Delete "${data.filename}"? The audio file and all extracted vocab will be removed. This can't be undone.`
-      )
-    ) {
-      return;
-    }
+    const ok = await confirm({
+      title: "Delete extraction",
+      message: `Delete “${data.filename}”? The audio file and all extracted vocab will be removed. This can't be undone.`,
+      confirmLabel: "Delete",
+      danger: true,
+    });
+    if (!ok) return;
     setDeleting(true);
     try {
       await api.deleteExtraction(id);

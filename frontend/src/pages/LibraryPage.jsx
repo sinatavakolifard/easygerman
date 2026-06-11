@@ -3,8 +3,10 @@ import { Link } from "react-router-dom";
 import { api } from "../api.js";
 import { useConfig } from "../ConfigContext.jsx";
 import Toast from "../components/Toast.jsx";
+import { useConfirm } from "../components/ConfirmProvider.jsx";
 
 export default function LibraryPage() {
+  const confirm = useConfirm();
   const { features, ready } = useConfig();
   const [extractions, setExtractions] = useState(null);
   const [error, setError] = useState(null); // fatal: library failed to load
@@ -19,13 +21,13 @@ export default function LibraryPage() {
   }, []);
 
   const onDelete = async (e) => {
-    if (
-      !window.confirm(
-        `Delete "${e.filename}"? The audio file and all extracted vocab will be removed. This can't be undone.`
-      )
-    ) {
-      return;
-    }
+    const ok = await confirm({
+      title: "Delete extraction",
+      message: `Delete “${e.filename}”? The audio file and all extracted vocab will be removed. This can't be undone.`,
+      confirmLabel: "Delete",
+      danger: true,
+    });
+    if (!ok) return;
     setDeletingId(e.id);
     try {
       await api.deleteExtraction(e.id);

@@ -2,8 +2,10 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api.js";
 import Toast from "../components/Toast.jsx";
+import { useConfirm } from "../components/ConfirmProvider.jsx";
 
 export default function SavedWordsPage() {
+  const confirm = useConfirm();
   const [words, setWords] = useState(null);
   const [error, setError] = useState(null); // fatal: list failed to load
   const [notice, setNotice] = useState(null); // transient: action failed
@@ -17,13 +19,13 @@ export default function SavedWordsPage() {
   }, []);
 
   const onRemove = async (w) => {
-    if (
-      !window.confirm(
-        `Remove "${w.lemma}" from your saved words?`
-      )
-    ) {
-      return;
-    }
+    const ok = await confirm({
+      title: "Remove saved word",
+      message: `Remove “${w.lemma}” from your saved words?`,
+      confirmLabel: "Remove",
+      danger: true,
+    });
+    if (!ok) return;
     setRemovingId(w.id);
     try {
       await api.deleteSavedWord(w.id);
