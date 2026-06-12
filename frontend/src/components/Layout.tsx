@@ -1,9 +1,15 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { useAuth } from "../AuthContext.jsx";
-import ThemeToggle from "./ThemeToggle.jsx";
+import { useAuth } from "../AuthContext";
+import ThemeToggle from "./ThemeToggle";
+import type { User } from "../types";
 
-function NavItems({ user, onLogout }) {
+interface NavItemsProps {
+  user: User | null | undefined;
+  onLogout: (e: FormEvent<HTMLFormElement>) => void;
+}
+
+function NavItems({ user, onLogout }: NavItemsProps) {
   return user ? (
     <>
       <Link to="/library">Library</Link>
@@ -39,7 +45,7 @@ export default function Layout() {
     setMenuOpen(false);
   }, [location.pathname]);
 
-  const onLogout = async (e) => {
+  const onLogout = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     await logout();
     navigate("/login");

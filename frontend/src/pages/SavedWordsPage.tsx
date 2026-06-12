@@ -1,29 +1,30 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { api } from "../api.js";
-import Toast from "../components/Toast.jsx";
-import EditWordModal from "../components/EditWordModal.jsx";
-import { useConfirm } from "../components/ConfirmProvider.jsx";
-import { useConfig } from "../ConfigContext.jsx";
+import { api } from "../api";
+import Toast from "../components/Toast";
+import EditWordModal from "../components/EditWordModal";
+import { useConfirm } from "../components/ConfirmProvider";
+import { useConfig } from "../ConfigContext";
+import type { ApiError, SavedWord, WordEditFields } from "../types";
 
 export default function SavedWordsPage() {
   const confirm = useConfirm();
   const { features } = useConfig();
-  const [words, setWords] = useState(null);
-  const [error, setError] = useState(null); // fatal: list failed to load
-  const [notice, setNotice] = useState(null); // transient: action failed
-  const [removingId, setRemovingId] = useState(null);
-  const [editing, setEditing] = useState(null); // saved word being edited
+  const [words, setWords] = useState<SavedWord[] | null>(null);
+  const [error, setError] = useState<string | null>(null); // fatal: load failed
+  const [notice, setNotice] = useState<string | null>(null); // transient: action failed
+  const [removingId, setRemovingId] = useState<number | null>(null);
+  const [editing, setEditing] = useState<SavedWord | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
 
   useEffect(() => {
     api
       .savedWords()
       .then((res) => setWords(res.words))
-      .catch((e) => setError(e.message || "Failed to load saved words"));
+      .catch((e: ApiError) => setError(e.message || "Failed to load saved words"));
   }, []);
 
-  const onRemove = async (w) => {
+  const onRemove = async (w: SavedWord) => {
     const ok = await confirm({
       title: "Remove saved word",
       message: `Remove “${w.lemma}” from your saved words?`,
@@ -34,24 +35,24 @@ export default function SavedWordsPage() {
     setRemovingId(w.id);
     try {
       await api.deleteSavedWord(w.id);
-      setWords((rows) => rows.filter((r) => r.id !== w.id));
+      setWords((rows) => (rows ?? []).filter((r) => r.id !== w.id));
     } catch (err) {
       // Non-fatal: keep the list on screen.
-      setNotice(err.message || "Couldn't remove the word.");
+      setNotice((err as ApiError).message || "Couldn't remove the word.");
     } finally {
       setRemovingId(null);
     }
   };
 
-  const onSaveEdit = async (fields) => {
+  const onSaveEdit = async (fields: WordEditFields) => {
     if (!editing) return;
     setSavingEdit(true);
     try {
       const { word } = await api.editSavedWord(editing.id, fields);
-      setWords((rows) => rows.map((r) => (r.id === word.id ? word : r)));
+      setWords((rows) => (rows ?? []).map((r) => (r.id === word.id ? word : r)));
       setEditing(null);
     } catch (err) {
-      setNotice(err.message || "Couldn't save the edit.");
+      setNotice((err as ApiError).message || "Couldn't save the edit.");
     } finally {
       setSavingEdit(false);
     }
@@ -85,9 +86,7 @@ export default function SavedWordsPage() {
                   {w.lemma}
                   <span className="saved-pos"> · {w.pos}</span>
                 </div>
-                {w.meaning && (
-                  <p className="saved-meaning">{w.meaning}</p>
-                )}
+                {w.meaning && <p className="saved-meaning">{w.meaning}</p>}
                 {w.example && (
                   <div className="saved-example">
                     <div className="example-de">{w.example}</div>

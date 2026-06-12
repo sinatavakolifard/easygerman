@@ -1,30 +1,44 @@
-import { useEffect, useState } from "react";
-import { api } from "../api.js";
+import { useEffect, useState, type FormEvent } from "react";
+import { api } from "../api";
+import type { ApiError, Extraction, Level } from "../types";
 
-const FALLBACK_LEVELS = [
+const FALLBACK_LEVELS: Level[] = [
   { name: "A2+", max_zipf: 5.0 },
   { name: "B1+", max_zipf: 4.5 },
   { name: "B2+", max_zipf: 4.0 },
   { name: "C1+", max_zipf: 3.5 },
 ];
 
-export default function ReextractPanel({ extraction, onUpdated }) {
-  const [levels, setLevels] = useState(FALLBACK_LEVELS);
+interface ReextractPanelProps {
+  extraction: Extraction;
+  onUpdated: (data: Extraction) => void;
+}
+
+export default function ReextractPanel({
+  extraction,
+  onUpdated,
+}: ReextractPanelProps) {
+  const [levels, setLevels] = useState<Level[]>(FALLBACK_LEVELS);
   const [defaultLevel, setDefaultLevel] = useState("B2+");
   const [level, setLevel] = useState("B2+");
   const [minCount, setMinCount] = useState(extraction.min_count ?? 1);
   const [top, setTop] = useState(extraction.top_k ?? 50);
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    api.config().then((c) => {
-      if (c.levels) setLevels(c.levels);
-      if (c.default_level) {
-        setDefaultLevel(c.default_level);
-        setLevel(c.default_level);
-      }
-    }).catch(() => { /* keep fallback */ });
+    api
+      .config()
+      .then((c) => {
+        if (c.levels) setLevels(c.levels);
+        if (c.default_level) {
+          setDefaultLevel(c.default_level);
+          setLevel(c.default_level);
+        }
+      })
+      .catch(() => {
+        /* keep fallback */
+      });
   }, []);
 
   // If the parent extraction object changes (e.g. after a successful
@@ -34,19 +48,19 @@ export default function ReextractPanel({ extraction, onUpdated }) {
     setTop(extraction.top_k ?? 50);
   }, [extraction.min_count, extraction.top_k]);
 
-  const onSubmit = async (e) => {
+  const onSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError(null);
     setSubmitting(true);
     try {
-      const data = await api.reextract(extraction.extraction_id, {
+      const data = await api.reextract(extraction.extraction_id ?? 0, {
         level,
         min_count: minCount,
         top,
       });
       onUpdated(data);
     } catch (err) {
-      setError(err.message || "Re-extract failed");
+      setError((err as ApiError).message || "Re-extract failed");
     } finally {
       setSubmitting(false);
     }

@@ -1,9 +1,22 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import type { EditableWord, WordEditFields } from "../types";
+
+interface EditWordModalProps {
+  word: EditableWord;
+  onSave: (fields: WordEditFields) => void;
+  onCancel: () => void;
+  saving: boolean;
+}
 
 // Modal form for editing a word's German (article + lemma), meaning, and
 // example sentence + translation. `word` provides the initial values;
 // `onSave(fields)` receives the trimmed fields; `onCancel` dismisses.
-export default function EditWordModal({ word, onSave, onCancel, saving }) {
+export default function EditWordModal({
+  word,
+  onSave,
+  onCancel,
+  saving,
+}: EditWordModalProps) {
   const [article, setArticle] = useState(word.article || "");
   const [lemma, setLemma] = useState(word.lemma || "");
   const [meaning, setMeaning] = useState(word.meaning || "");
@@ -11,12 +24,12 @@ export default function EditWordModal({ word, onSave, onCancel, saving }) {
   const [exampleTranslation, setExampleTranslation] = useState(
     word.example_translation || ""
   );
-  const [fieldError, setFieldError] = useState(null);
-  const firstRef = useRef(null);
+  const [fieldError, setFieldError] = useState<string | null>(null);
+  const firstRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     firstRef.current?.focus();
-    const onKeyDown = (e) => {
+    const onKeyDown = (e: KeyboardEvent) => {
       const { key } = e;
       if (key === "Escape") onCancel();
     };
@@ -24,7 +37,7 @@ export default function EditWordModal({ word, onSave, onCancel, saving }) {
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [onCancel]);
 
-  const submit = (e) => {
+  const submit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!lemma.trim()) {
       setFieldError("The word can't be empty.");
@@ -81,7 +94,7 @@ export default function EditWordModal({ word, onSave, onCancel, saving }) {
         <label className="modal-field">
           <span>Example</span>
           <textarea
-            rows="2"
+            rows={2}
             value={example}
             onChange={(e) => setExample(e.target.value)}
           />
@@ -89,7 +102,7 @@ export default function EditWordModal({ word, onSave, onCancel, saving }) {
         <label className="modal-field">
           <span>Example translation</span>
           <textarea
-            rows="2"
+            rows={2}
             value={exampleTranslation}
             onChange={(e) => setExampleTranslation(e.target.value)}
           />

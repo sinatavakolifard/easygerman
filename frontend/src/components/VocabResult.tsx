@@ -1,7 +1,9 @@
 import { Link } from "react-router-dom";
-import { useConfig } from "../ConfigContext.jsx";
+import type { ReactNode } from "react";
+import { useConfig } from "../ConfigContext";
+import type { Extraction, User, Vocab } from "../types";
 
-function StarIcon({ filled }) {
+function StarIcon({ filled }: { filled: boolean }) {
   return (
     <svg viewBox="0 0 24 24" fill={filled ? "currentColor" : "none"}
          stroke="currentColor" strokeWidth="2" strokeLinecap="round"
@@ -21,12 +23,26 @@ function PencilIcon() {
   );
 }
 
+interface ActionButtonsProps {
+  v: Vocab;
+  saved: boolean;
+  busy: boolean;
+  onEditWord?: (v: Vocab) => void;
+  onToggleSave?: (v: Vocab) => void;
+}
+
 // The per-row edit + save buttons. Rendered twice per row: once in a hidden
 // inline copy inside the lemma cell (shown on mobile, where the table reflows
 // to cards) and once in the trailing actions column (shown on desktop). CSS
 // shows exactly one per breakpoint — a `position: absolute` <td> can't be
 // pinned reliably in a reflowed table, so we duplicate instead.
-function ActionButtons({ v, saved, busy, onEditWord, onToggleSave }) {
+function ActionButtons({
+  v,
+  saved,
+  busy,
+  onEditWord,
+  onToggleSave,
+}: ActionButtonsProps) {
   return (
     <>
       {onEditWord && (
@@ -63,8 +79,19 @@ function ActionButtons({ v, saved, busy, onEditWord, onToggleSave }) {
   );
 }
 
-function vocabKey(v) {
+function vocabKey(v: Vocab): string {
   return `${v.lemma}|${v.pos}`;
+}
+
+interface VocabResultProps {
+  data: Extraction | null;
+  currentUser?: User | null;
+  controls?: ReactNode;
+  headerAction?: ReactNode;
+  savedMap?: Map<string, number>;
+  onToggleSave?: (v: Vocab) => void;
+  savingKey?: string | null;
+  onEditWord?: (v: Vocab) => void;
 }
 
 export default function VocabResult({
@@ -76,7 +103,7 @@ export default function VocabResult({
   onToggleSave,
   savingKey,
   onEditWord,
-}) {
+}: VocabResultProps) {
   const { features, ready } = useConfig();
   if (!data) return null;
   const {

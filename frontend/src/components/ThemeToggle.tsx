@@ -1,11 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type MouseEvent } from "react";
+import type { Theme } from "../types";
 
 const STORAGE_KEY = "easy-german-theme";
 
-function readInitial() {
-  if (typeof document !== "undefined" && document.documentElement.dataset.theme) {
-    return document.documentElement.dataset.theme;
-  }
+function readInitial(): Theme {
+  const current = document.documentElement.dataset.theme;
+  if (current === "light" || current === "dark") return current;
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved === "light" || saved === "dark") return saved;
@@ -16,7 +16,7 @@ function readInitial() {
 }
 
 export default function ThemeToggle() {
-  const [theme, setTheme] = useState(readInitial);
+  const [theme, setTheme] = useState<Theme>(readInitial);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -27,13 +27,13 @@ export default function ThemeToggle() {
     }
   }, [theme]);
 
-  const next = theme === "dark" ? "light" : "dark";
+  const next: Theme = theme === "dark" ? "light" : "dark";
 
   return (
     <button
       type="button"
       className="theme-toggle"
-      onClick={(e) => {
+      onClick={(e: MouseEvent<HTMLButtonElement>) => {
         setTheme((t) => (t === "dark" ? "light" : "dark"));
         e.currentTarget.blur();
       }}

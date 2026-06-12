@@ -1,26 +1,27 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { api } from "../api.js";
-import { useConfig } from "../ConfigContext.jsx";
-import Toast from "../components/Toast.jsx";
-import { useConfirm } from "../components/ConfirmProvider.jsx";
+import { api } from "../api";
+import { useConfig } from "../ConfigContext";
+import Toast from "../components/Toast";
+import { useConfirm } from "../components/ConfirmProvider";
+import type { ApiError, LibraryItem } from "../types";
 
 export default function LibraryPage() {
   const confirm = useConfirm();
   const { features, ready } = useConfig();
-  const [extractions, setExtractions] = useState(null);
-  const [error, setError] = useState(null); // fatal: library failed to load
-  const [notice, setNotice] = useState(null); // transient: action failed
-  const [deletingId, setDeletingId] = useState(null);
+  const [extractions, setExtractions] = useState<LibraryItem[] | null>(null);
+  const [error, setError] = useState<string | null>(null); // fatal: load failed
+  const [notice, setNotice] = useState<string | null>(null); // transient: action failed
+  const [deletingId, setDeletingId] = useState<number | null>(null);
 
   useEffect(() => {
     api
       .library()
       .then((data) => setExtractions(data.extractions))
-      .catch((e) => setError(e.message || "Failed to load library"));
+      .catch((e: ApiError) => setError(e.message || "Failed to load library"));
   }, []);
 
-  const onDelete = async (e) => {
+  const onDelete = async (e: LibraryItem) => {
     const ok = await confirm({
       title: "Delete extraction",
       message: `Delete “${e.filename}”? The audio file and all extracted vocab will be removed. This can't be undone.`,
@@ -31,10 +32,10 @@ export default function LibraryPage() {
     setDeletingId(e.id);
     try {
       await api.deleteExtraction(e.id);
-      setExtractions((rows) => rows.filter((r) => r.id !== e.id));
+      setExtractions((rows) => (rows ?? []).filter((r) => r.id !== e.id));
     } catch (err) {
       // Non-fatal: keep the library list on screen.
-      setNotice(err.message || "Couldn't delete the extraction.");
+      setNotice((err as ApiError).message || "Couldn't delete the extraction.");
     } finally {
       setDeletingId(null);
     }

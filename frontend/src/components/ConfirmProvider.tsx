@@ -5,32 +5,74 @@ import {
   useEffect,
   useRef,
   useState,
+  type FormEvent,
+  type ReactNode,
 } from "react";
+
+export interface ConfirmOptions {
+  title?: string;
+  message?: string;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  danger?: boolean;
+}
+
+export interface PromptOptions extends ConfirmOptions {
+  label?: string;
+  placeholder?: string;
+  inputType?: string;
+  validate?: (value: string) => string | null;
+}
+
+type ConfirmFn = (options?: ConfirmOptions) => Promise<boolean>;
+type PromptFn = (options?: PromptOptions) => Promise<string | null>;
+
+interface ConfirmContextValue {
+  confirm: ConfirmFn;
+  prompt: PromptFn;
+}
+
+type DialogState =
+  | { kind: "confirm"; opts: ConfirmOptions }
+  | { kind: "prompt"; opts: PromptOptions }
+  | null;
 
 // Styled replacements for window.confirm() / window.prompt(). Mount
 // <ConfirmProvider> near the app root, then:
 //   const confirm = useConfirm(); if (await confirm({...})) { ... }
 //   const prompt = usePrompt();   const value = await prompt({...}); // null = cancelled
-const ConfirmContext = createContext({
+const ConfirmContext = createContext<ConfirmContextValue>({
   confirm: () => Promise.resolve(false),
   prompt: () => Promise.resolve(null),
 });
 
-export function ConfirmProvider({ children }) {
-  const [dialog, setDialog] = useState(null); // { kind, opts } | null
-  const resolveRef = useRef(null);
+export function ConfirmProvider({ children }: { children: ReactNode }) {
+  const [dialog, setDialog] = useState<DialogState>(null);
+  const resolveRef = useRef<((value: boolean | string | null) => void) | null>(
+    null
+  );
 
-  const open = useCallback((kind, options) => {
-    return new Promise((resolve) => {
-      resolveRef.current = resolve;
-      setDialog({ kind, opts: options || {} });
-    });
-  }, []);
+  const open = useCallback(
+    (state: NonNullable<DialogState>) =>
+      new Promise<boolean | string | null>((resolve) => {
+        resolveRef.current = resolve;
+        setDialog(state);
+      }),
+    []
+  );
 
-  const confirm = useCallback((options) => open("confirm", options), [open]);
-  const prompt = useCallback((options) => open("prompt", options), [open]);
+  const confirm = useCallback<ConfirmFn>(
+    (options) =>
+      open({ kind: "confirm", opts: options ?? {} }) as Promise<boolean>,
+    [open]
+  );
+  const prompt = useCallback<PromptFn>(
+    (options) =>
+      open({ kind: "prompt", opts: options ?? {} }) as Promise<string | null>,
+    [open]
+  );
 
-  const settle = useCallback((result) => {
+  const settle = useCallback((result: boolean | string | null) => {
     setDialog(null);
     if (resolveRef.current) {
       resolveRef.current(result);
@@ -51,17 +93,17 @@ export function ConfirmProvider({ children }) {
   );
 }
 
-export function useConfirm() {
+export function useConfirm(): ConfirmFn {
   return useContext(ConfirmContext).confirm;
 }
 
-export function usePrompt() {
+export function usePrompt(): PromptFn {
   return useContext(ConfirmContext).prompt;
 }
 
-function useDialogKeys(onEscape) {
+function useDialogKeys(onEscape: () => void) {
   useEffect(() => {
-    const onKeyDown = (e) => {
+    const onKeyDown = (e: KeyboardEvent) => {
       const { key } = e;
       if (key === "Escape") onEscape();
     };
@@ -70,7 +112,12 @@ function useDialogKeys(onEscape) {
   }, [onEscape]);
 }
 
-function ConfirmDialog({ opts, onSettle }) {
+interface ConfirmDialogProps {
+  opts: ConfirmOptions;
+  onSettle: (result: boolean) => void;
+}
+
+function ConfirmDialog({ opts, onSettle }: ConfirmDialogProps) {
   const {
     title = "Are you sure?",
     message,
@@ -78,7 +125,7 @@ function ConfirmDialog({ opts, onSettle }) {
     cancelLabel = "Cancel",
     danger = false,
   } = opts;
-  const confirmRef = useRef(null);
+  const confirmRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     confirmRef.current?.focus();
@@ -118,7 +165,12 @@ function ConfirmDialog({ opts, onSettle }) {
   );
 }
 
-function PromptDialog({ opts, onSettle }) {
+interface PromptDialogProps {
+  opts: PromptOptions;
+  onSettle: (result: string | null) => void;
+}
+
+function PromptDialog({ opts, onSettle }: PromptDialogProps) {
   const {
     title = "Enter a value",
     message,
@@ -131,15 +183,15 @@ function PromptDialog({ opts, onSettle }) {
     validate,
   } = opts;
   const [value, setValue] = useState("");
-  const [fieldError, setFieldError] = useState(null);
-  const inputRef = useRef(null);
+  const [fieldError, setFieldError] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
   useDialogKeys(() => onSettle(null));
 
-  const submit = (e) => {
+  const submit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (validate) {
       const msg = validate(value);

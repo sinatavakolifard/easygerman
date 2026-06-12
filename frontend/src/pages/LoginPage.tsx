@@ -1,18 +1,19 @@
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import { Link, Navigate, useNavigate } from "react-router-dom";
-import { useAuth } from "../AuthContext.jsx";
+import { useAuth } from "../AuthContext";
+import type { ApiError } from "../types";
 
 export default function LoginPage() {
   const { user, login } = useAuth();
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState(null);
+  const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   if (user) return <Navigate to="/" replace />;
 
-  const onSubmit = async (e) => {
+  const onSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError(null);
     setSubmitting(true);
@@ -20,7 +21,7 @@ export default function LoginPage() {
       await login(email, password);
       navigate("/");
     } catch (err) {
-      setError(err.message || "Login failed");
+      setError((err as ApiError).message || "Login failed");
     } finally {
       setSubmitting(false);
     }

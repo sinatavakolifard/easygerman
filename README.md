@@ -270,7 +270,7 @@ reextract.py       # CLI to rebuild stored vocab rows with the current filter lo
 requirements.txt   # Python deps
 run-server.sh      # Build + run gunicorn (loopback)
 run-tunnel.sh      # Cloudflare named tunnel
-frontend/          # React 18 + Vite + React Router 6 SPA
+frontend/          # React 18 + Vite + React Router 6 SPA (TypeScript, strict)
 data/              # SQLite DB, audio, session token (gitignored)
 CLAUDE.md          # Detailed architecture / implementation notes
 ```

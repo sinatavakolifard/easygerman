@@ -1,11 +1,22 @@
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { api } from "../api.js";
-import { useAuth } from "../AuthContext.jsx";
-import { useConfig } from "../ConfigContext.jsx";
-import VocabResult from "../components/VocabResult.jsx";
+import { api } from "../api";
+import { useAuth } from "../AuthContext";
+import { useConfig } from "../ConfigContext";
+import VocabResult from "../components/VocabResult";
+import type { ApiError, Config, Extraction } from "../types";
 
-const FALLBACK_CONFIG = {
+type FormConfig = Pick<
+  Config,
+  | "models"
+  | "default_model"
+  | "default_min_count"
+  | "default_top"
+  | "levels"
+  | "default_level"
+>;
+
+const FALLBACK_CONFIG: FormConfig = {
   models: ["tiny", "base", "small", "medium", "large-v3"],
   default_model: "small",
   default_min_count: 1,
@@ -22,13 +33,13 @@ const FALLBACK_CONFIG = {
 export default function IndexPage() {
   const { user } = useAuth();
   const { config: loadedConfig, features, ready } = useConfig();
-  const config = loadedConfig || FALLBACK_CONFIG;
+  const config: FormConfig = loadedConfig ?? FALLBACK_CONFIG;
   const navigate = useNavigate();
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState(null);
-  const [anonResult, setAnonResult] = useState(null);
+  const [error, setError] = useState<string | null>(null);
+  const [anonResult, setAnonResult] = useState<Extraction | null>(null);
 
-  const onSubmit = async (e) => {
+  const onSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError(null);
     setSubmitting(true);
@@ -41,7 +52,7 @@ export default function IndexPage() {
         setAnonResult(data);
       }
     } catch (err) {
-      setError(err.message || "Upload failed");
+      setError((err as ApiError).message || "Upload failed");
     } finally {
       setSubmitting(false);
     }
