@@ -409,6 +409,11 @@ table.vocab .lemma .article {
 }
 table.vocab .example { font-size: 14px; }
 table.vocab .example-de { color: var(--fg); }
+/* The vocab word emphasised inside its example sentence. */
+.lemma-hit {
+  font-weight: 700;
+  color: var(--accent);
+}
 table.vocab .example-en {
   margin-top: 4px;
   font-style: italic;

@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { api } from "../api";
 import Toast from "../components/Toast";
 import EditWordModal from "../components/EditWordModal";
+import HighlightedSentence from "../components/HighlightedSentence";
 import { useConfirm } from "../components/ConfirmProvider";
 import { useConfig } from "../ConfigContext";
 import type { ApiError, SavedWord, WordEditFields } from "../types";
@@ -89,7 +90,9 @@ export default function SavedWordsPage() {
                 {w.meaning && <p className="saved-meaning">{w.meaning}</p>}
                 {w.example && (
                   <div className="saved-example">
-                    <div className="example-de">{w.example}</div>
+                    <div className="example-de">
+                      <HighlightedSentence text={w.example} lemma={w.lemma} />
+                    </div>
                     {w.example_translation && (
                       <div className="example-en">{w.example_translation}</div>
                     )}

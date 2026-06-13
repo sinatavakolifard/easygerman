@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { useState, type ReactNode } from "react";
 import { useConfig } from "../ConfigContext";
+import HighlightedSentence from "./HighlightedSentence";
 import type { Extraction, User, Vocab } from "../types";
 
 function StarIcon({ filled }: { filled: boolean }) {
@@ -231,7 +232,9 @@ export default function VocabResult({
                 <td className="count">{v.count}</td>
                 <td className="meaning">{v.meaning}</td>
                 <td className="example">
-                  <div className="example-de">{v.example}</div>
+                  <div className="example-de">
+                    <HighlightedSentence text={v.example} lemma={v.lemma} />
+                  </div>
                   {v.example_translation && (
                     <div className="example-en">{v.example_translation}</div>
                   )}
