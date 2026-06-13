@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { useConfig } from "../ConfigContext";
 import type { Extraction, User, Vocab } from "../types";
 
@@ -105,6 +105,7 @@ export default function VocabResult({
   onEditWord,
 }: VocabResultProps) {
   const { features, ready } = useConfig();
+  const [starredOnly, setStarredOnly] = useState(false);
   if (!data) return null;
   const {
     filename,
@@ -117,6 +118,13 @@ export default function VocabResult({
     anonymous,
   } = data;
   const audioUrl = audio_token ? `/audio/${audio_token}` : null;
+
+  // Filter the table to starred words. Only offered when a savedMap is passed
+  // (the logged-in extraction view); the anonymous result can't star words.
+  const isSaved = (v: Vocab) => Boolean(savedMap?.has(vocabKey(v)));
+  const starredCount = savedMap ? vocab.filter(isSaved).length : 0;
+  const shownVocab = starredOnly ? vocab.filter(isSaved) : vocab;
+  const canFilterStarred = Boolean(savedMap) && vocab.length > 0;
 
   return (
     <>
@@ -155,7 +163,32 @@ export default function VocabResult({
         </audio>
       )}
 
-      {vocab.length > 0 ? (
+      {canFilterStarred && (
+        <div className="vocab-filter">
+          <label className="vocab-filter-toggle">
+            <input
+              type="checkbox"
+              checked={starredOnly}
+              onChange={(e) => setStarredOnly(e.target.checked)}
+            />
+            <span>Starred only</span>
+          </label>
+          <span className="vocab-filter-count">
+            {starredCount} of {vocab.length} starred
+          </span>
+        </div>
+      )}
+
+      {vocab.length === 0 ? (
+        <p>
+          No vocabulary extracted. Try lowering <em>min count</em>, or check that the
+          audio is in German.
+        </p>
+      ) : shownVocab.length === 0 ? (
+        <p className="empty-state">
+          No starred words in this extraction yet. Tap a star to add one.
+        </p>
+      ) : (
         <table className="vocab">
           <thead>
             <tr>
@@ -170,7 +203,7 @@ export default function VocabResult({
             </tr>
           </thead>
           <tbody>
-            {vocab.map((v, i) => {
+            {shownVocab.map((v, i) => {
               const key = vocabKey(v);
               const saved = savedMap ? savedMap.has(key) : false;
               const busy = savingKey === key;
@@ -219,11 +252,6 @@ export default function VocabResult({
             })}
           </tbody>
         </table>
-      ) : (
-        <p>
-          No vocabulary extracted. Try lowering <em>min count</em>, or check that the
-          audio is in German.
-        </p>
       )}
 
       <details className="transcript">
