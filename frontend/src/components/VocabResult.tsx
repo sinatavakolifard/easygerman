@@ -107,6 +107,7 @@ export default function VocabResult({
 }: VocabResultProps) {
   const { features, ready } = useConfig();
   const [starredOnly, setStarredOnly] = useState(false);
+  const [query, setQuery] = useState("");
   if (!data) return null;
   const {
     filename,
@@ -120,12 +121,19 @@ export default function VocabResult({
   } = data;
   const audioUrl = audio_token ? `/audio/${audio_token}` : null;
 
-  // Filter the table to starred words. Only offered when a savedMap is passed
-  // (the logged-in extraction view); the anonymous result can't star words.
+  // Filter the table by a text query (word + meaning) and, when a savedMap is
+  // passed (the logged-in extraction view), by starred-only. The anonymous
+  // result can't star words, so only its search box shows.
   const isSaved = (v: Vocab) => Boolean(savedMap?.has(vocabKey(v)));
-  const starredCount = savedMap ? vocab.filter(isSaved).length : 0;
-  const shownVocab = starredOnly ? vocab.filter(isSaved) : vocab;
-  const canFilterStarred = Boolean(savedMap) && vocab.length > 0;
+  const q = query.trim().toLowerCase();
+  const matchesQuery = (v: Vocab) =>
+    !q ||
+    v.lemma.toLowerCase().includes(q) ||
+    (v.meaning || "").toLowerCase().includes(q);
+  const shownVocab = vocab.filter(
+    (v) => (!starredOnly || isSaved(v)) && matchesQuery(v)
+  );
+  const canFilterStarred = Boolean(savedMap);
 
   return (
     <>
@@ -164,18 +172,28 @@ export default function VocabResult({
         </audio>
       )}
 
-      {canFilterStarred && (
+      {vocab.length > 0 && (
         <div className="vocab-filter">
-          <label className="vocab-filter-toggle">
-            <input
-              type="checkbox"
-              checked={starredOnly}
-              onChange={(e) => setStarredOnly(e.target.checked)}
-            />
-            <span>Starred only</span>
-          </label>
+          <input
+            type="search"
+            className="vocab-search"
+            placeholder="Search words or meanings…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            aria-label="Search words"
+          />
+          {canFilterStarred && (
+            <label className="vocab-filter-toggle">
+              <input
+                type="checkbox"
+                checked={starredOnly}
+                onChange={(e) => setStarredOnly(e.target.checked)}
+              />
+              <span>Starred only</span>
+            </label>
+          )}
           <span className="vocab-filter-count">
-            {starredCount} of {vocab.length} starred
+            {shownVocab.length} of {vocab.length}
           </span>
         </div>
       )}
@@ -187,7 +205,8 @@ export default function VocabResult({
         </p>
       ) : shownVocab.length === 0 ? (
         <p className="empty-state">
-          No starred words in this extraction yet. Tap a star to add one.
+          No words match {query.trim() ? "your search" : "this filter"}
+          {starredOnly ? " in your starred words" : ""}.
         </p>
       ) : (
         <table className="vocab">

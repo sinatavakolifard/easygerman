@@ -329,6 +329,21 @@ button:disabled { opacity: 0.6; cursor: wait; }
 }
 .vocab-filter-toggle input { width: auto; margin: 0; cursor: pointer; accent-color: var(--accent); }
 .vocab-filter-count { color: var(--fg-muted); font-size: 13px; }
+.vocab-search {
+  flex: 1 1 220px;
+  max-width: 360px;
+  font: inherit;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--input-bg);
+  color: var(--fg);
+}
+.vocab-search:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
 
 table.vocab {
   border-collapse: collapse;

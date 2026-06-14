@@ -17,6 +17,7 @@ export default function SavedWordsPage() {
   const [removingId, setRemovingId] = useState<number | null>(null);
   const [editing, setEditing] = useState<SavedWord | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
+  const [query, setQuery] = useState("");
 
   useEffect(() => {
     api
@@ -62,6 +63,15 @@ export default function SavedWordsPage() {
   if (error) return <p className="form-error">{error}</p>;
   if (words === null) return <p>Loading…</p>;
 
+  // Filter by a text query against the word + its meaning.
+  const q = query.trim().toLowerCase();
+  const shown = words.filter(
+    (w) =>
+      !q ||
+      w.lemma.toLowerCase().includes(q) ||
+      (w.meaning || "").toLowerCase().includes(q)
+  );
+
   return (
     <>
       <div className="library-header">
@@ -77,8 +87,25 @@ export default function SavedWordsPage() {
           tap the star next to a word to add it here.
         </p>
       ) : (
-        <ul className="saved-list">
-          {words.map((w) => (
+        <>
+          <div className="vocab-filter">
+            <input
+              type="search"
+              className="vocab-search"
+              placeholder="Search words or meanings…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              aria-label="Search saved words"
+            />
+            <span className="vocab-filter-count">
+              {shown.length} of {words.length}
+            </span>
+          </div>
+          {shown.length === 0 ? (
+            <p className="empty-state">No saved words match your search.</p>
+          ) : (
+            <ul className="saved-list">
+              {shown.map((w) => (
             <li className="saved-card" key={w.id}>
               <div className="saved-content">
                 <div className="saved-lemma">
@@ -125,8 +152,10 @@ export default function SavedWordsPage() {
                 </button>
               </div>
             </li>
-          ))}
-        </ul>
+              ))}
+            </ul>
+          )}
+        </>
       )}
       {editing && (
         <EditWordModal
