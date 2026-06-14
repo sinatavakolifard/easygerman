@@ -22,18 +22,33 @@ cd "$(dirname "$0")"
 REMOTE="${REMOTE:-origin}"
 BRANCH="${BRANCH:-main}"
 INTERVAL="${INTERVAL:-300}"
+LOG_DIR="${LOG_DIR:-data/logs}"
 
 SERVER_PID=""
 TUNNEL_PID=""
 
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
 
+# Read stdin line by line and prefix each line with [label]; used to label and
+# interleave the server/tunnel output on the console.
+prefix() {
+  local label="$1"
+  while IFS= read -r line; do
+    printf '[%s] %s\n' "$label" "$line"
+  done
+}
+
 start_services() {
-  log "Starting server (run-server.sh)…"
-  ./run-server.sh &
+  mkdir -p "$LOG_DIR"
+  # Route each service's stdout+stderr through prefix() (labels every line)
+  # and tee (also appends to a per-service log file). The redirect uses a
+  # process substitution rather than a pipe, so `$!` is still run-server.sh's
+  # / run-tunnel.sh's own PID — kill/wait in stop_services keep working.
+  log "Starting server (run-server.sh) → console + $LOG_DIR/server.log"
+  ./run-server.sh > >(prefix server | tee -a "$LOG_DIR/server.log") 2>&1 &
   SERVER_PID=$!
-  log "Starting tunnel (run-tunnel.sh)…"
-  ./run-tunnel.sh &
+  log "Starting tunnel (run-tunnel.sh) → console + $LOG_DIR/tunnel.log"
+  ./run-tunnel.sh > >(prefix tunnel | tee -a "$LOG_DIR/tunnel.log") 2>&1 &
   TUNNEL_PID=$!
   log "Running — server PID=$SERVER_PID, tunnel PID=$TUNNEL_PID"
 }
