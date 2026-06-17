@@ -1,6 +1,21 @@
 # easy-german
 
-CLI tool that extracts learning-worthy German vocabulary from podcast audio and writes a Markdown vocab list with English translations.
+CLI tool + web app that extracts learning-worthy German vocabulary from podcast audio and writes a Markdown vocab list (CLI) or a saved, browsable library (web) with English translations.
+
+## Repo map / where to look
+
+| Path | What it is | Deep docs |
+|---|---|---|
+| `easy_german.py` | The extraction pipeline (transcribe → lemmatize → filter → rank → translate → write). Also the standalone CLI. | This file → **Pipeline** |
+| `app.py` | Flask JSON API + static-file server (SPA fallback, audio, auth, admin). | This file → **Backend** |
+| `db.py` | SQLite schema + `init_db()`. | This file → **Auth + persistence** |
+| `reextract.py` | Batch rebuild of stored vocab after filter changes. | `/reextract` skill |
+| `frontend/` | React + Vite + TypeScript SPA (the whole UI). | `frontend/CLAUDE.md` |
+| `run-server.sh`, `run-tunnel.sh`, `auto-deploy.sh` | Production serving + Cloudflare tunnel + supervisor. | `/deploy` skill |
+
+- **Frontend work** → read `frontend/CLAUDE.md` (auto-loads when editing files there).
+- **Running / building / deploying** → invoke the `/deploy` skill.
+- **Rebuilding saved vocab after changing filter constants** → invoke the `/reextract` skill.
 
 ## Pipeline (`easy_german.py`)
 
@@ -17,14 +32,14 @@ CLI tool that extracts learning-worthy German vocabulary from podcast audio and 
 5. **Translate** — `deep-translator` GoogleTranslator. `_translate_batch()` helper does batch-with-one-by-one fallback (empty string on per-item failure). Called twice per run: once for lemmas (→ `Vocab.meaning`), once for example sentences (→ `Vocab.example_translation`) so the user gets the lemma translated in context.
 6. **Write** — Markdown table: `German | POS | Count | Meaning | Example`. The German cell uses `Vocab.display`, which prepends `der`/`die`/`das` for nouns when a gender is known. The Example cell stacks the German sentence and the italicized English translation separated by `<br>` (when present). POS labels mapped via `POS_LABEL` (`NOUN→noun`, `PROPN→name`, etc.). Pipes in example/meaning escaped.
 
-## Key constants / data
+### Key constants / data
 
 - `KEEP_POS`, `POS_LABEL`, `GENDER_ARTICLE`, `PLURAL_SUFFIXES`, `DIFFICULTY_LEVELS`, `DEFAULT_LEVEL`
 - `COMMON_ZIPF_THRESHOLD = 4.0` (default upper bound, ≈ B2+), `RARE_ZIPF_FLOOR = 1.5`
 - `Vocab` dataclass (incl. `meaning`, `example`, `example_translation`, `article`, `display` property, `score` property)
 - `try_singularize()` plural→singular heuristic; `_de_un_umlaut()` rightmost-umlaut helper
 
-## CLI
+### CLI
 
 ```
 python easy_german.py AUDIO [-o OUT] [--model SIZE] [--min-count N] [--top N]
@@ -32,138 +47,44 @@ python easy_german.py AUDIO [-o OUT] [--model SIZE] [--min-count N] [--top N]
                      [--save-transcript PATH] [-v]
 ```
 
-`--level` is a CEFR-ish preset that sets `--max-zipf` for you; either flag works.
+`--level` is a CEFR-ish preset that sets `--max-zipf` for you; either flag works. Default output path: `vocab-<audio-stem>.md`.
 
-Default output path: `vocab-<audio-stem>.md`.
+## Backend (`app.py`)
 
-## Web UI
+JSON API only — no Jinja, no `render_template`. The SPA lives in `frontend/` (see `frontend/CLAUDE.md`).
 
-Two-tier app: Flask is now a JSON API + static-file server, and the UI is a React + Vite SPA in `frontend/`.
+**The full endpoint catalogue lives in the `app.py` module docstring** (every route, its auth/feature gate, body shape, and return shape). It's kept next to the code so it stays in sync — read the top of `app.py` when you need the route surface. The notes below cover the cross-cutting behaviour the docstring points back to.
 
-### Backend (`app.py`)
+The `__main__` block binds `127.0.0.1` with `debug=False` (safe by default — see the `/deploy` skill); the LAN-reachable `host="0.0.0.0"` line is commented out below it for dev use.
 
-JSON API only — no Jinja, no `render_template`. Endpoints:
+### Feature flags (per-machine)
 
-- `GET /api/config` — model list, defaults, allowed extensions (used by the upload form), plus `features` (the per-machine feature flags, see below) so the SPA can hide disabled UI.
-- `GET /api/me` — `{ user: { id, email, is_admin } | null }`.
-- `POST /api/auth/signup`, `POST /api/auth/login`, `POST /api/auth/logout` — JSON in / JSON out, set the session cookie. `login_required` returns `401 { error }` (no redirects) so the React app can route to `/login` itself.
-- `POST /api/process` — multipart upload. Returns `{ filename, model, min_count, top_k, transcript, audio_token, vocab[], anonymous, extraction_id?, created_at? }`. Anonymous uploads go to `<tmpdir>/easy-german-anon/<uuid><ext>` and aren't persisted (`_sweep_anon_audio()` clears files older than 1 hour); logged-in uploads go to `data/audio/<uuid><ext>` and write `extractions` + `vocab_entries` rows.
-- `GET /api/library` (login required) — list of the user's extractions newest-first with word counts.
-- `GET /api/extractions/<id>` (login required) — single extraction, ownership-checked, with `vocab` rebuilt from `vocab_entries`. Each vocab dict carries its row `id` (so the client can target edits); the anonymous `/api/process` result doesn't.
-- `POST /api/extractions/<id>/reextract` (login required) — body `{ level?, min_count?, top? }`. Loads the stored transcript, re-runs `extract_vocab` + `translate` with the new params, replaces the extraction's `vocab_entries` rows, updates `min_count` / `top_k` on the extractions row, then returns the same shape as the GET above so the client can drop it into state. `top=0` means no cap — keep every word that passed the filters (can be slow because translation is per-word).
-- `DELETE /api/extractions/<id>` (login required) — ownership-checked. Removes the audio file from `data/audio/<token>` (best-effort `unlink(missing_ok=True)`) and `DELETE`s the row; `vocab_entries` follow via `ON DELETE CASCADE`. Returns `{ ok: true }`.
-- `GET /api/saved-words` (login required) — list the user's favourited words, newest-first.
-- `POST /api/saved-words` (login required) — body `{ lemma, pos, article?, meaning?, example?, example_translation?, source_filename? }`. New saves return `201 { id }`; the UNIQUE(user_id, lemma, pos) constraint makes re-saving idempotent — duplicates return `200 { id }` of the existing row.
-- `DELETE /api/saved-words/<id>` (login required) — ownership-checked. Returns `{ ok: true }`.
-- `PATCH /api/extractions/<id>/vocab/<entry_id>` (login required, `edit` feature) — edit a word: body `{ article?, lemma, meaning?, example?, example_translation? }` (lemma required). Ownership-checked via the extraction. Returns the full extraction (same shape as the GET). See **Editing words** below for the cross-table sync.
-- `PATCH /api/saved-words/<id>` (login required, `edit` feature) — same fields; returns `{ word }`. The two PATCH routes share `_sync_word_edit`.
-- `GET /api/admin/users` (admin only) — every account with `created_at`, `is_admin`, and per-user `extraction_count` / `saved_count` (subquery counts).
-- `DELETE /api/admin/users/<id>` (admin only) — delete a user; unlinks their `data/audio/` files first, then `DELETE`s the row (extractions / vocab_entries / saved_words follow via cascade). Guarded: can't delete yourself, can't delete another admin (demote first).
-- `POST /api/admin/users/<id>/admin` (admin only) — body `{ is_admin }`. Promote/demote. Guarded: can't change your own flag (keeps at least one admin — you).
-- `POST /api/admin/users/<id>/password` (admin only) — body `{ password }` (≥8 chars). Sets a new hash; the only password-recovery path since there's no email flow.
-- `GET /audio/<token>` — binary audio. Same dual logic as before: DB row → ownership check → serve from `data/audio/`, else fall back to the anon temp dir.
-- Catch-all `/<path:path>` and `/` — SPA fallback. Reads `frontend/dist/`; if the path is a real built asset it's served directly, otherwise `index.html` is returned so React Router can take over. If `frontend/dist/` doesn't exist yet, returns a 503 telling you to build the frontend.
+`app.py` reads boolean feature flags at import time so the *same code* runs in different modes on different hosts (e.g. a second machine serving the same Cloudflare tunnel URL read-only). `_flag(name, default)` reads each via `os.getenv` — deliberately `os.getenv`, **not** the dotted attribute form, which contains the substring the local `block-env.sh` hook rejects. `FEATURES` holds `upload` / `audio` / `reextract` / `delete` / `edit`. The coarse `EASY_GERMAN_READONLY=1` flips all of them off; the per-feature vars (`EASY_GERMAN_UPLOAD`, `EASY_GERMAN_AUDIO`, `EASY_GERMAN_REEXTRACT`, `EASY_GERMAN_DELETE`, `EASY_GERMAN_EDIT`) override individually, so a restricted host can re-enable just one.
 
-The `__main__` block binds `127.0.0.1` with `debug=False` (safe by default — see Production / deployment); the LAN-reachable `host="0.0.0.0"` line is commented out below it for dev use (phone via `http://<mac-lan-ip>:5001`).
+The `feature_required(name)` decorator gates the write/heavy endpoints **server-side** (returns `403` when off): `POST /api/process` (upload), `GET /audio/<token>` (playback/download), `POST /api/extractions/<id>/reextract`, `DELETE /api/extractions/<id>`, and the two edit PATCHes (`edit`). Everything else — login/signup, library + extraction reads, and all of `/api/saved-words` (starring) — stays enabled, so the restricted profile is "log in, read past words, star them". `/api/config` echoes `FEATURES` so the React app can hide the matching UI; the decorator is what actually enforces it — the UI hiding is cosmetic.
 
-#### Feature flags (per-machine)
+Flags come from the real environment **or** a local dotenv file. `load_dotenv()` (python-dotenv) runs right after the imports, before `FEATURES` is computed, so per-machine config can live in a gitignored dotenv file instead of being exported on every launch. An exported variable still wins over the file (`override=False`), and a missing file is a no-op. The file's literal name trips the `block-env.sh` hook, so it's created/maintained by hand, not by the agent.
 
-`app.py` reads a set of boolean feature flags at import time so the *same code* can run in different modes on different hosts (e.g. a second machine that serves the same Cloudflare tunnel URL but only allows reading). `_flag(name, default)` reads each via `os.getenv` — deliberately `os.getenv`, **not** the dotted attribute form, which contains the substring the local `block-env.sh` hook rejects. `FEATURES` holds `upload` / `audio` / `reextract` / `delete` / `edit`. The coarse `EASY_GERMAN_READONLY=1` flips all of them off; the per-feature vars (`EASY_GERMAN_UPLOAD`, `EASY_GERMAN_AUDIO`, `EASY_GERMAN_REEXTRACT`, `EASY_GERMAN_DELETE`, `EASY_GERMAN_EDIT`) override individually, so a restricted host can re-enable just one.
-
-The `feature_required(name)` decorator gates the write/heavy endpoints **server-side** (returns `403` when off): `POST /api/process` (upload), `GET /audio/<token>` (playback/download), `POST /api/extractions/<id>/reextract`, `DELETE /api/extractions/<id>`, and the two edit PATCHes (`edit`). Everything else — login/signup, library + extraction reads, and all of `/api/saved-words` (starring) — stays enabled, so the restricted profile is "log in, read past words, star them". `/api/config` echoes `FEATURES` so the React app can hide the matching UI; the gate that actually enforces it is the decorator, the UI hiding is cosmetic.
-
-Flags come from the real environment **or** a local dotenv file. `load_dotenv()` (python-dotenv) runs right after the imports, before `FEATURES` is computed, so per-machine config can live in a gitignored dotenv file instead of being exported on every launch. An exported variable still wins over the file (`override=False`), and a missing file is a no-op — identical to the old behaviour. The file's literal name trips the `block-env.sh` hook, so it's created/maintained by hand, not by the agent.
-
-#### Editing words
+### Editing words
 
 A word can live in two tables: a `vocab_entries` row (inside an extraction) and a `saved_words` row (if starred). They're linked by `(user_id, lemma, pos)`. `_sync_word_edit(db, user_id, old_lemma, old_pos, fields)` applies the edited fields to **every** matching row in *both* tables for that user — so editing a word (or its meaning) from either side updates the other, and every other occurrence of the same word across the user's extractions, keeping them consistent. `pos` isn't editable, so it stays the join key while `lemma` moves to its new value across all linked rows. A lemma rename that collides with an existing saved word hits the `UNIQUE(user_id, lemma, pos)` constraint → caught and returned as `400`. Deleting an extraction still leaves saved words intact (saved_words only cascades from `users`, never from extractions), satisfying "delete the extraction, keep the saved word".
-
-### Frontend (`frontend/`)
-
-Vite + React 18 + React Router 6, in **TypeScript** (strict). `tsconfig.json` has `strict: true` + `noUnusedLocals`/`noUnusedParameters`, `jsx: react-jsx`, `moduleResolution: bundler`, `noEmit` (Vite does the transpile). `npm run build` runs `tsc --noEmit && vite build`, so a type error fails the build; `npm run typecheck` runs the check alone. Shared domain types (`User`, `Config`, `Features`, `Vocab`, `Extraction`, `SavedWord`, `AdminUser`, `WordEditFields`, `ApiError`, …) live in `src/types.ts` and mirror the JSON the Flask API returns. Imports are extensionless (`./api`, `./components/Layout`).
-
-- Entry: `index.html` → `src/main.tsx` → `src/App.tsx`. Routes: `/`, `/login`, `/signup`, `/library`, `/extraction/:id`.
-- `src/AuthContext.tsx` — calls `/api/me` on mount, exposes `user` (`undefined` while loading), `login`, `signup`, `logout`. `<RequireAuth>` in `App.tsx` redirects to `/login` for the gated pages.
-- `src/ConfigContext.tsx` — calls `/api/config` once on mount and exposes `{ config, features, ready }`. `features` defaults to all-on, but `ready` is `false` until the fetch settles (set in `.finally`, so a failed request still flips it `true` rather than hanging). Consumers **must wait for `ready`** before rendering feature-gated UI — otherwise a restricted host briefly renders the full UI with the optimistic defaults and then hides it once the real flags arrive (the upload-form flash). So: `IndexPage` returns `null` until `ready`, then swaps the upload form for a notice when `!features.upload`; `VocabResult` only renders the audio player when `ready && features.audio`; `ExtractionPage` / `LibraryPage` fold `!ready` into their existing "Loading…" guards before honouring `!features.reextract` / `!features.delete`. Wired in `main.tsx` as `<ConfigProvider>` wrapping `<AuthProvider>`. `IndexPage` no longer fetches `/api/config` itself — it reads `config` (model/level/default lists) from this context, falling back to its inline `FALLBACK_CONFIG`.
-- `src/api.ts` — thin `fetch` wrapper. `jsonFetch<T>(path, opts): Promise<T>` is generic and each `api.*` method pins its `T` (e.g. `api.extraction → Promise<Extraction>`, `api.editSavedWord → Promise<{ word: SavedWord }>`), so call sites are fully typed. `credentials: "include"` so the session cookie travels; raises on non-2xx with `err.data.error`. A rejected `fetch()` (no network — `fetch` rejects *before* any response) is caught and re-thrown as a friendly `Error("You appear to be offline — …")` cast to `ApiError` with `err.offline = true`, so callers show a human message instead of the raw browser `NetworkError`/`Failed to fetch`.
-- `src/components/Layout.tsx` — topbar with auth-aware nav (Library / email / Log out vs Log in / Sign up). Uses an `<Outlet>` so route content slots in below. On mobile (≤640px) the inline nav collapses behind a hamburger button and reappears as a column-flex dropdown panel below the topbar; the panel auto-closes when the route changes (`useEffect` on `location.pathname`). The Log in link gets a `topbar-secondary` outline-button treatment in the dropdown so it matches the Sign-up CTA's footprint, while staying a plain text link on desktop.
-- `src/components/VocabResult.tsx` — shared between the "just-uploaded anonymous result" view (rendered inline by `IndexPage`) and the saved-extraction view (rendered by `ExtractionPage`). Same vocab table + audio player + transcript `<details>`.
-- **Word filter (search + starred-only)**: above the table, `VocabResult` renders a `.vocab-filter` row with a `.vocab-search` text box (filters by word + meaning, case-insensitive substring) and — when a `savedMap` is provided (the logged-in extraction view) — a "Starred only" checkbox, plus an "X of N" shown/total count. Both combine: `vocab.filter(v => (!starredOnly || savedMap.has(lemma|pos)) && matchesQuery(v))`, reacting to the live `savedMap` so starring/unstarring updates immediately. Filtering to zero shows a "No words match…" message rather than an empty table. The search box shows whenever there are words (incl. the anonymous result); the star checkbox only when starring is available. (CSS note: `.vocab-filter-toggle` must set `flex-direction: row` — the global `label { flex-direction: column }` would otherwise stack the checkbox above its text.)
-- **`src/components/HighlightedSentence.tsx`** — bolds the vocab word inside its German example sentence (used in `VocabResult`'s example cell and on `SavedWordsPage`, styled via `.lemma-hit`). Because the lemma is the dictionary form but the sentence has the inflected surface form, `matchesLemma()` matches on exact, prefix-either-way (noun plurals `Umwelt`→Umwelten, adjective endings `nachhaltig`→nachhaltiges), or a shared prefix `≥ max(4, ceil(0.75·minLen))` (verb stems `schützen`→schützt). Thresholds are deliberately conservative to avoid bolding merely-similar words (e.g. it won't match *schätze* for `schützen`, or *natürlich* for `Natur`). It splits the sentence with a Unicode-aware regex (`/(\p{L}[\p{L}'-]*)/u`) so words land on odd indices.
-- `src/pages/IndexPage.tsx` — upload form. On success: if `extraction_id` is in the response, navigates to `/extraction/<id>`; otherwise (anonymous) sets local state and shows the result inline.
-- `src/pages/{Login,Signup,Library,Extraction}Page.tsx` — straightforward form pages. `ExtractionPage` also mounts a `ReextractPanel`.
-- `src/components/ReextractPanel.tsx` — collapsible `<details>` rendered above the audio player on the saved-extraction view (passed in as the `controls` slot on `VocabResult`, so anonymous results don't see it). Lets the user pick a new difficulty / min count / top words and POSTs to `/api/extractions/<id>/reextract`; the response replaces the page's `data` state in place. The upload form (`IndexPage`) has the matching Difficulty dropdown.
-- **Delete an extraction**: `LibraryPage` has a Delete button on each card (centred vertically, flex layout); `ExtractionPage` passes a Delete button via a new `headerAction` slot on `VocabResult` that renders next to the meta line via the `.result-header` flex container — same row as the filename on desktop, stacked below on mobile. Both confirm via the styled `useConfirm()` dialog first (see `ConfirmProvider` below); on success the library list filters the row out (or the detail view navigates back to `/library`).
-- **Row actions (save + edit)**: each row gets a `.save-toggle` star (outline unsaved / filled-accent saved) and, when editing is on, a `.edit-toggle` pencil. `VocabResult` props: `savedMap` (`Map<"lemma|pos", savedId>`), `onToggleSave`, `savingKey`, `onEditWord`. The buttons are only rendered when the matching handler is passed, so the anonymous result view (`IndexPage` passes neither) shows none. `ExtractionPage` fetches `/api/saved-words` on mount, builds the map, and patches it in place after each save/unsave — no full refetch.
-- **Where the action icons sit — dual render**: the buttons are factored into an `ActionButtons` component rendered **twice** per row: once inline in the lemma cell (`<span class="lemma-actions">`) and once in a trailing `<td class="row-actions">` (after the Example column, with an empty `th.row-actions-h` header). CSS shows exactly one per breakpoint: **desktop** shows the trailing column (icons at the far right, an "imaginary column") and hides `.lemma-actions`; **mobile** (`@media max-width: 640px`) hides the trailing column and shows `.lemma-actions` in the lemma line — `td.lemma` is `display:flex` with `.lemma-text { flex: 1 }`, pushing the icons to the card's right edge (22px, thumb-reachable). The duplication is deliberate: a `position: absolute` `<td>` can't be pinned reliably in a reflowed table (a `display:block` `<tr>` doesn't establish a containing block — the cell collapses/anchors wrong), so we render in both DOM spots and toggle visibility instead. On desktop the lemma cell is a plain table-cell (`vertical-align: top`) so the word lines up with the other columns.
-- **Edit a word**: the `.edit-toggle` pencil opens `src/components/EditWordModal.tsx` — a styled modal form (article + lemma on one `.modal-row`, meaning, then example + example-translation `<textarea>`s) with inline empty-lemma validation, Escape/backdrop to cancel. `ExtractionPage` holds the `editing` entry, `PATCH`es `/api/extractions/<id>/vocab/<entry_id>`, drops the returned extraction into `data`, and re-fetches the saved-words map (the lemma may have changed). `SavedWordsPage` does the same via `PATCH /api/saved-words/<id>` and patches the edited row in place. Both gate the pencil/Edit button on `features.edit`.
-- **`AdminPage` at `/admin`** (admins only): a `.admin-table` of every account (id, email, joined, extraction/saved counts, role) with per-row **Reset password** (styled `usePrompt()` input dialog; a successful reset shows a success `<Toast>`), **Promote/Demote** (styled `useConfirm()`), and **Delete** (styled `useConfirm()`, `danger`) actions. State is patched in place after each call — no refetch. Self-row actions are disabled (you can't demote/delete yourself), and Delete is disabled for admins (demote first), mirroring the server guards. `App.tsx` gates the route with `<RequireAdmin>` (loading → null, anon → `/login`, non-admin → `/`); `Layout` shows the `Admin` nav link only when `user.is_admin`. The mobile reflow reuses the vocab-table card pattern via `data-label` attributes on each `td`.
-- **`SavedWordsPage` at `/saved`**: card-style list of the user's saved words (lemma + POS + meaning + example + English translation + source filename + saved-at). Has the same `.vocab-search` box (filters the cards by word + meaning, with an "X of N" count). Each card has Edit (when `features.edit`) + Remove buttons grouped in a `.card-actions` flex. Linked in the topbar (`Library` · `Saved` · email · `Log out`) so it appears in both the desktop nav and the hamburger drop-down.
-- **Mobile button-width gotcha**: the `@media (max-width: 640px)` block previously had `button { width: 100% }` — meant for the primary form submit, but every `<button>` matched, so Delete / Remove / star / hamburger got stretched to 100% of their flex container, crushing the title and content cells to one-character-per-line. Rule is now scoped to `form button[type=submit]`. On the same breakpoint, `.extraction-card` and `.saved-card` switch to `flex-direction: column` and the delete/remove button gets `align-self: flex-end`, so on a narrow phone the title/content takes the full row width and the destructive action sits below it, right-aligned.
-- `src/styles.css` — same rules as the previous Jinja CSS, ported in full (topbar, vocab table, mobile media query for the table-to-cards reflow, auth form styling, etc.). All colours go through CSS variables; the default `:root` block is the dark palette and `:root[data-theme="light"]` overrides for light mode.
-- `src/components/Toast.tsx` — transient, dismissible bottom-pinned notification (auto-hides after 6s; renders `null` when `message` is falsy; uses a ref so re-renders don't reset its timer). Used for **non-fatal action failures**, which follow a deliberate split: each page keeps `error` for the *fatal* case (the initial load failed → full-page `form-error`) and a separate `notice` for *transient* action failures (star/save, delete, remove). The earlier bug was a single shared `error` whose `if (error) return …` guard wiped the whole page — so a star tap while offline made every word disappear. Now `ExtractionPage` / `LibraryPage` / `SavedWordsPage` route action failures to `setNotice` → `<Toast>`, leaving the content on screen; `error` is only set in the load effect. (`AdminPage` renders action *errors* inline above its table, but uses a `<Toast>` for the password-reset *success*.) Takes a `type` prop: `"error"` (default, red) or `"success"` (neutral card + accent border).
-- `src/components/ConfirmProvider.tsx` — styled replacements for `window.confirm()` / `window.prompt()`, mounted near the app root in `main.tsx` (inside `<AuthProvider>`). Exposes two hooks: `useConfirm()` returns `confirm({title, message, confirmLabel?, cancelLabel?, danger?})` → `Promise<boolean>`; `usePrompt()` returns `prompt({…, label?, inputType?, validate?})` → `Promise<string|null>` (null = cancelled), with `validate(value)` errors shown inline in the dialog (`.modal-error`) rather than dismissing it. Both render a centred `.modal` card over a `.modal-backdrop`, auto-focus the confirm/input, close on Escape or backdrop click, and resolve the pending promise via a single `resolveRef`. Call sites: SavedWords remove, Library/Extraction delete, Admin delete/promote-demote (`useConfirm`) and Admin reset-password (`usePrompt`) — no `window.confirm`/`prompt`/`alert` remain in the app.
-- `src/components/ThemeToggle.tsx` — sun/moon SVG button in the topbar that flips `<html data-theme>` between `"dark"` and `"light"` and persists the choice to `localStorage["easy-german-theme"]`. An inline script in `index.html` reads that value (defaulting to `"dark"`) and sets `data-theme` *before* the stylesheet loads, so there's no light-flash on first paint.
-- **Spinner shape gotcha**: `.spinner` is a flex item next to a `<p>` in `#processing`. Without `flex-shrink: 0` it loses width on narrow screens while keeping its 24px height, so the "Processing…" circle renders as an oval on phones. The rule is global (not in the mobile media query) — the squish triggers whenever the flex container is narrower than the spinner + text, which happens on real phones but also small desktop windows.
-- **Touch hover gotcha**: every `:hover` rule is wrapped in `@media (hover: hover) and (pointer: fine)`. Without this, iOS Safari and mobile Firefox keep the hover state applied after a tap until you tap somewhere else. Icon buttons also set `-webkit-tap-highlight-color: transparent`, suppress `:focus` outline in favour of `:focus-visible` for keyboard users, and call `e.currentTarget.blur()` after the click to drop focus immediately.
-- **Button styling architecture**: the base `<button>` is intentionally **neutral** (just `font: inherit; cursor: pointer` + a disabled dim) — all visual styling comes from explicit classes. Filled accent buttons (the form submits, primary CTAs) opt IN with `.btn-primary`, which owns the `:hover` fill. Outline/subtle/icon buttons (`.admin-btn`, `.modal-btn`, `.extraction-delete`, `.link-button`, `.save-toggle`, `.theme-toggle`, `.hamburger`, `.toast-close`) style themselves and do **not** need to override `background`. This replaced an earlier setup where every `<button>` defaulted to filled-accent *and* a global `button:hover` set `background: var(--accent-hover)` — that fill bled onto icon/outline buttons, repeatedly producing orange-icon-on-orange-fill (theme toggle, hamburger, modal Cancel) until each one added a `background: none` opt-out. New buttons should pick `.btn-primary` (filled) or self-style (outline); they no longer fight a global fill.
-- `vite.config.ts` — dev proxy for `/api` and `/audio` → `http://127.0.0.1:5001`, so the React dev server on `:5173` and the Flask backend on `:5001` look like a single origin from the browser. Cookies stay first-party and auth just works.
-
-### Dev workflow
-
-Two processes:
-
-```
-python3 app.py                              # Flask on :5001 (API + audio)
-cd frontend && npm install && npm run dev   # Vite on :5173 (open this)
-```
-
-Editing `frontend/src/...` hot-reloads on `:5173` instantly. `:5001` keeps showing whatever was last `npm run build`'d (or 503s if there's no build yet) — this is fine and expected. The Vite dev server transpiles TS without type-checking, so run `cd frontend && npm run typecheck` (or rely on `npm run build`) to catch type errors.
-
-### Production / deployment
-
-Single process. Build once, run Flask:
-
-```
-cd frontend && npm run build                # outputs frontend/dist/
-python3 app.py                              # serves API + dist/ together (loopback, debugger off)
-```
-
-**Never serve `python3 app.py` to a network.** The `__main__` block binds `127.0.0.1` with `debug=False` precisely so an accidental run isn't exposed (the Werkzeug debugger is a remote-code-execution vector). For LAN dev (e.g. testing from a phone), flip the commented `host="0.0.0.0"` line — but that's dev only, never the public path.
-
-For real serving, use gunicorn — it imports `app:app` directly and never runs the `__main__` block, so the debugger can't be reached: `gunicorn --workers 1 --timeout 0 --bind 127.0.0.1:5001 app:app`. `--workers 1` because each worker holds its own copy of the Whisper model in RAM; `--timeout 0` because transcription routinely runs longer than the default 30 s. Bind loopback only and let the tunnel reach in.
-
-**Live deployment — laptop as host, public at `https://easygerman.sinacodes.de`:**
-
-- `run-server.sh` — builds `frontend/dist/` if missing, then runs the gunicorn line above (loopback only).
-- `run-tunnel.sh` — `cloudflared tunnel run easy-german`, the named Cloudflare tunnel. Makes an *outbound* connection to Cloudflare, so no router ports are opened and the home IP stays hidden; Cloudflare terminates HTTPS with an auto-issued cert.
-- `auto-deploy.sh` — one-command supervisor: launches `run-server.sh` + `run-tunnel.sh` (backgrounded, PIDs tracked) and every `INTERVAL` seconds (default 300) `git fetch`es `$REMOTE/$BRANCH` (default `origin/main`). Each service's stdout+stderr is labeled per line (`[server]` / `[tunnel]`) on the console and tee'd to `data/logs/{server,tunnel}.log` (gitignored under `data/`); the redirect uses a process substitution (`> >(prefix … | tee …)`) rather than a pipe so `$!` stays the service's own PID and `kill`/`wait` keep working. On a **clean fast-forward** it stops the services, `git pull`s, `rm -rf frontend/dist`, rebuilds (`npm install && npm run build`), and restarts them; otherwise it leaves them running. It only pulls when strictly behind (`git merge-base --is-ancestor` guard) so unpushed/diverged local commits don't trigger a restart loop, restarts either service if it dies between checks, and traps INT/TERM to tear both down. Run via `caffeinate -s ./auto-deploy.sh` on a laptop. A failed build leaves `dist` missing (logged) — `run-server.sh` retries the build on next start, and the `tsc` gate means a type error blocks the deploy.
-- Tunnel config lives outside the repo in `~/.cloudflared/`: `config.yml` (maps `easygerman.sinacodes.de` → `http://localhost:5001`, 404 fallback) + `<tunnel-id>.json` credentials (secret, never commit). Created via `cloudflared tunnel login` → `cloudflared tunnel create easy-german` → `cloudflared tunnel route dns easy-german easygerman.sinacodes.de`.
-- Both processes only run while the laptop is awake/online; `caffeinate -s` keeps it from sleeping. Not yet daemonised (no launchd service) and no Cloudflare Access wall in front — the app's own email/password auth is the only gate.
-
-**Restricted second host (same URL).** The tunnel URL is tied to the named tunnel + DNS, not to a machine, so a second machine can serve the same `easygerman.sinacodes.de` when the primary is offline — *not both at once*, since each host has its own SQLite DB. Run that host with `EASY_GERMAN_READONLY=1` (exported, or in its local dotenv file) for a read-only profile: login, browse the saved library, read/star words — no upload, audio, re-extract, or delete (see **Feature flags** above). It needs `data/easy-german.db` copied over so there are words to read, but not `data/audio/` while audio is disabled.
-
-Alternatives: zero-config quick tunnel `cloudflared tunnel --url http://localhost:5001` (random `*.trycloudflare.com` URL); on a VPS, Caddy with `reverse_proxy localhost:5001` auto-issues a Let's Encrypt cert.
 
 ## Auth + persistence (`app.py`, `db.py`)
 
 Email + password accounts (no OAuth, no email verification, no password reset).
 
-- **Storage**: SQLite at `data/easy-german.db`. Three tables — `users` (`email` UNIQUE NOCASE + `password_hash` + `is_admin`), `extractions` (one row per pipeline run, with `audio_token`, `model`, `min_count`, `top_k`, `transcript`, `created_at`), `vocab_entries` (one row per word, ordered by `position`, ON DELETE CASCADE from extractions). Schema lives in `db.py::SCHEMA`; `init_db()` runs on import.
+- **Storage**: SQLite at `data/easy-german.db`. Tables — `users` (`email` UNIQUE NOCASE + `password_hash` + `is_admin`), `extractions` (one row per pipeline run, with `audio_token`, `model`, `min_count`, `top_k`, `transcript`, `created_at`), `vocab_entries` (one row per word, ordered by `position`, ON DELETE CASCADE from extractions), plus `saved_words` (cascades only from `users`). Schema lives in `db.py::SCHEMA`; `init_db()` runs on import.
 - **Sessions**: Flask's signed-cookie sessions, signed by a 32-byte token persisted at `data/session_token` (created on first run, mode 0600). Wired in via `app.config["SECRET_KEY"] = _load_session_token()` — the dict-style assignment is deliberate; the local `block-env.sh` hook rejects several dotted credential-style substrings, which the attribute-style form would trip on.
-- **Auth helpers**: `werkzeug.security.generate_password_hash` / `check_password_hash` (defaults to scrypt). `@app.before_request _load_user` puts the row (incl. `is_admin`) into `g.user`. `login_required` decorator returns `401 { error }` JSON so the React app can route to `/login` client-side.
-- **Admin**: the `users.is_admin` flag. On import `_bootstrap_admin()` runs `UPDATE users SET is_admin=1 WHERE email = ADMIN_EMAIL` (idempotent); `ADMIN_EMAIL` defaults to `s@gmail.com` and is overridable with `EASY_GERMAN_ADMIN_EMAIL`. Signup also sets the flag when the new email matches. The `admin_required` decorator (login **and** `is_admin`) gates the `/api/admin/*` endpoints — `401` logged-out, `403` non-admin. `db.py::init_db()` migrates older DBs with `ALTER TABLE users ADD COLUMN is_admin` when the column is missing (the `CREATE TABLE IF NOT EXISTS` alone wouldn't add it).
+- **Auth helpers**: `werkzeug.security.generate_password_hash` / `check_password_hash` (defaults to scrypt). `@app.before_request _load_user` puts the row (incl. `is_admin`) into `g.user`. `login_required` returns `401 { error }` JSON so the React app can route to `/login` client-side.
+- **Admin**: the `users.is_admin` flag. On import `_bootstrap_admin()` runs `UPDATE users SET is_admin=1 WHERE email = ADMIN_EMAIL` (idempotent); `ADMIN_EMAIL` defaults to `s@gmail.com` and is overridable with `EASY_GERMAN_ADMIN_EMAIL`. Signup also sets the flag when the new email matches. The `admin_required` decorator (login **and** `is_admin`) gates `/api/admin/*` — `401` logged-out, `403` non-admin. `db.py::init_db()` migrates older DBs with `ALTER TABLE users ADD COLUMN is_admin` when the column is missing.
 - **`data/`** is gitignored — DB, audio, and session token all stay local.
-
-`reextract.py` is a standalone CLI that rebuilds `vocab_entries` rows for already-stored extractions using the current filter logic (use after changing `COMMON_ZIPF_THRESHOLD`, `KEEP_POS`, etc.). Flags: `--user EMAIL`, `--level {A2+,B1+,B2+,C1+}`, `--min-count`, `--top`, `--dry-run`. Idempotent. Same effect as clicking the panel for every saved extraction in turn.
 
 ## Dependencies
 
-Backend (`requirements.txt`): `faster-whisper>=1.0.0`, `spacy>=3.7.0`, `wordfreq>=3.1.0`, `deep-translator>=1.11.4`, `flask>=3.0.0`, `gunicorn>=21.0.0`, `python-dotenv>=1.0.0` (loads per-machine feature flags from a local dotenv file). Plus the spaCy German model: `python -m spacy download de_core_news_sm`.
-
-Frontend (`frontend/package.json`): `react`, `react-dom`, `react-router-dom` runtime; `vite`, `@vitejs/plugin-react`, `typescript`, `@types/react`, `@types/react-dom` dev. Run `cd frontend && npm install` once.
+Backend (`requirements.txt`): `faster-whisper>=1.0.0`, `spacy>=3.7.0`, `wordfreq>=3.1.0`, `deep-translator>=1.11.4`, `flask>=3.0.0`, `gunicorn>=21.0.0`, `python-dotenv>=1.0.0` (loads per-machine feature flags from a local dotenv file). Plus the spaCy German model: `python -m spacy download de_core_news_sm`. Frontend deps and tooling: see `frontend/CLAUDE.md`.
 
 ## Repo conventions
 
 - `main` branch.
 - `.gitignore` excludes audio (`*.wav`, `*.mp3`, `*.m4a`, `*.ogg`, `*.flac`), generated vocab files (`vocab*.md`), `.vscode/`, `data/` (DB + audio + session token), the per-machine dotenv config file (feature flags — differs per host), and frontend build artefacts (`frontend/node_modules/`, `frontend/dist/`, `frontend/.vite/`). Don't commit those.
+- **`block-env.sh` hook**: rejects dotted credential-style substrings. Use `os.getenv("…")` and `app.config["KEY"] = …` (dict form), never the dotted attribute forms, in `app.py`.
