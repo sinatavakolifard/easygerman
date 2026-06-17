@@ -4,6 +4,86 @@
 Each user signs up / logs in with email + password. Extractions are
 saved to SQLite (data/easy-german.db) and audio is kept in data/audio/
 so the user can revisit past results from /library.
+
+JSON API only -- no Jinja, no render_template. The SPA lives in frontend/
+(see frontend/CLAUDE.md). Architecture notes (feature flags, word-edit
+sync, auth/persistence) live in CLAUDE.md; this catalogue is the route
+surface.
+
+Endpoints
+---------
+GET    /api/config
+    Model list, defaults, allowed extensions, plus `features` (the
+    per-machine feature flags) so the SPA can hide disabled UI.
+GET    /api/me
+    { user: { id, email, is_admin } | null }.
+POST   /api/auth/signup
+POST   /api/auth/login
+POST   /api/auth/logout
+    JSON in / JSON out, set the session cookie. `login_required` returns
+    401 { error } (no redirects) so the React app routes to /login itself.
+POST   /api/process
+    Multipart upload. Returns { filename, model, min_count, top_k,
+    transcript, audio_token, vocab[], anonymous, extraction_id?,
+    created_at? }. Anonymous uploads go to <tmpdir>/easy-german-anon/
+    <uuid><ext> and aren't persisted (`_sweep_anon_audio()` clears files
+    older than 1 hour); logged-in uploads go to data/audio/<uuid><ext>
+    and write `extractions` + `vocab_entries` rows.
+GET    /api/library                            (login required)
+    The user's extractions newest-first with word counts.
+GET    /api/extractions/<id>                   (login required)
+    Single extraction, ownership-checked, with `vocab` rebuilt from
+    `vocab_entries`. Each vocab dict carries its row `id` (so the client
+    can target edits); the anonymous /api/process result doesn't.
+POST   /api/extractions/<id>/reextract         (login required, `reextract` feature)
+    Body { level?, min_count?, top? }. Loads the stored transcript,
+    re-runs extract_vocab + translate with the new params, replaces the
+    extraction's `vocab_entries` rows, updates min_count / top_k on the
+    extractions row, then returns the same shape as the GET above.
+    top=0 means no cap (slow -- translation is per-word).
+DELETE /api/extractions/<id>                   (login required, `delete` feature)
+    Ownership-checked. Removes the audio file from data/audio/<token>
+    (best-effort unlink(missing_ok=True)) and DELETEs the row;
+    `vocab_entries` follow via ON DELETE CASCADE. Returns { ok: true }.
+GET    /api/saved-words                         (login required)
+    The user's favourited words, newest-first.
+POST   /api/saved-words                         (login required)
+    Body { lemma, pos, article?, meaning?, example?, example_translation?,
+    source_filename? }. New saves return 201 { id }; the
+    UNIQUE(user_id, lemma, pos) constraint makes re-saving idempotent --
+    duplicates return 200 { id } of the existing row.
+DELETE /api/saved-words/<id>                    (login required)
+    Ownership-checked. Returns { ok: true }.
+PATCH  /api/extractions/<id>/vocab/<entry_id>   (login required, `edit` feature)
+    Edit a word: body { article?, lemma, meaning?, example?,
+    example_translation? } (lemma required). Ownership-checked via the
+    extraction. Returns the full extraction. See CLAUDE.md -> Editing
+    words for the cross-table sync.
+PATCH  /api/saved-words/<id>                    (login required, `edit` feature)
+    Same fields; returns { word }. Shares `_sync_word_edit` with the
+    route above.
+GET    /api/admin/users                         (admin only)
+    Every account with created_at, is_admin, and per-user
+    extraction_count / saved_count (subquery counts).
+DELETE /api/admin/users/<id>                    (admin only)
+    Delete a user; unlinks their data/audio/ files first, then DELETEs
+    the row (extractions / vocab_entries / saved_words follow via
+    cascade). Guarded: can't delete yourself, can't delete another admin
+    (demote first).
+POST   /api/admin/users/<id>/admin              (admin only)
+    Body { is_admin }. Promote/demote. Guarded: can't change your own
+    flag (keeps at least one admin -- you).
+POST   /api/admin/users/<id>/password           (admin only)
+    Body { password } (>=8 chars). Sets a new hash; the only
+    password-recovery path since there's no email flow.
+GET    /audio/<token>                           (`audio` feature)
+    Binary audio. DB row -> ownership check -> serve from data/audio/,
+    else fall back to the anon temp dir.
+GET    /  and  /<path:path>
+    SPA fallback. Reads frontend/dist/; a real built asset is served
+    directly, otherwise index.html is returned so React Router takes
+    over. If frontend/dist/ doesn't exist, returns 503 telling you to
+    build the frontend.
 """
 
 from __future__ import annotations
