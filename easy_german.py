@@ -16,9 +16,11 @@ import argparse
 import logging
 import sys
 from collections import Counter, defaultdict
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
+import requests.utils
 from deep_translator import GoogleTranslator
 from faster_whisper import WhisperModel
 from wordfreq import zipf_frequency
@@ -299,6 +301,34 @@ def extract_vocab(
     return selected
 
 
+# deep-translator scrapes https://translate.google.com/m with a bare
+# `requests.get` and sends no User-Agent at all (still true in 1.11.4, the
+# latest release). Google now answers UA-less requests with a 200 page that
+# has an embedded 500 error and no result element, so every lookup raised
+# TranslationNotFound and `_translate_batch` filled the column with empty
+# strings. Sending an ordinary browser UA makes it work again.
+_USER_AGENT = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+)
+
+
+@contextmanager
+def _browser_user_agent():
+    """Make `requests` default to a browser User-Agent inside this block.
+
+    deep-translator exposes no hook for request headers, so we patch the
+    default that every new `requests` Session picks up. Scoped to the
+    translation calls and restored afterwards.
+    """
+    original = requests.utils.default_user_agent
+    requests.utils.default_user_agent = lambda *args, **kwargs: _USER_AGENT
+    try:
+        yield
+    finally:
+        requests.utils.default_user_agent = original
+
+
 def _translate_batch(translator: GoogleTranslator, items: list[str]) -> list[str]:
     try:
         return translator.translate_batch(items)
@@ -318,11 +348,20 @@ def translate(vocab: list[Vocab]) -> None:
         return
     logging.info("Translating %d words and example sentences to English", len(vocab))
     translator = GoogleTranslator(source="de", target="en")
-    lemma_results = _translate_batch(translator, [v.lemma for v in vocab])
-    example_results = _translate_batch(translator, [v.example for v in vocab])
+    with _browser_user_agent():
+        lemma_results = _translate_batch(translator, [v.lemma for v in vocab])
+        example_results = _translate_batch(translator, [v.example for v in vocab])
     for v, lemma_t, example_t in zip(vocab, lemma_results, example_results):
         v.meaning = (lemma_t or "").strip()
         v.example_translation = (example_t or "").strip()
+    if not any(v.meaning for v in vocab):
+        # Every lookup came back empty — the translation service is unreachable
+        # or has changed shape again. Say so instead of silently shipping a
+        # vocab list with a blank Meaning column.
+        logging.warning(
+            "Translation returned nothing for all %d words — meanings will be blank",
+            len(vocab),
+        )
 
 
 def write_markdown(vocab: list[Vocab], out_path: Path, source: Path) -> None:
