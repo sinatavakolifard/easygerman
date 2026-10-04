@@ -167,15 +167,29 @@ The live site (`https://easygerman.sinacodes.de`) is just a machine running guni
 
 ### One-time tunnel creation
 
-Done once, on any machine (this needs `CERT_PEM` from login):
+Done once, on any machine:
 
 ```bash
-cloudflared tunnel login
-cloudflared tunnel create easy-german
+cloudflared tunnel login                 # opens a browser; writes ~/.cloudflared/cert.pem
+cloudflared tunnel create easy-german    # writes ~/.cloudflared/<tunnel-id>.json and prints the tunnel ID
 cloudflared tunnel route dns easy-german easygerman.sinacodes.de
 ```
 
-This writes `~/.cloudflared/config.yml`, `~/.cloudflared/<tunnel-id>.json`, and `CERT_PEM`.
+`cert.pem` is your Cloudflare account login (needed to create/manage tunnels). `<tunnel-id>.json` is the tunnel's own secret (needed to run it). Neither command writes `config.yml` — create it by hand at `~/.cloudflared/config.yml`, filling in the tunnel ID and your home path:
+
+```yaml
+# Maps the public hostname to the local gunicorn server (loopback only).
+tunnel: <tunnel-id>
+credentials-file: /Users/<user>/.cloudflared/<tunnel-id>.json   # Linux: /home/<user>/...
+
+ingress:
+  - hostname: easygerman.sinacodes.de
+    service: http://localhost:5001
+  # Anything else hitting this tunnel gets a 404 rather than being proxied.
+  - service: http_status:404
+```
+
+`cloudflared tunnel list` shows the tunnel ID if you need it again.
 
 ### Running it — macOS
 
@@ -242,11 +256,11 @@ The public URL is tied to the tunnel + DNS, **not** to a machine — any host ca
    - `<tunnel-id>.json` — the secret, **required** to run. Transfer securely, never commit.
    - `config.yml`
 3. **Fix the absolute `credentials-file:` path** in `config.yml` to the new host's home (e.g. `/home/<user>/.cloudflared/<tunnel-id>.json`).
-4. Run the tunnel **by UUID**, which needs no `CERT_PEM`:
+4. Run the tunnel **by UUID**, which needs no `cert.pem`:
    ```bash
    cloudflared tunnel --config ~/.cloudflared/config.yml run
    ```
-   `CERT_PEM` is only needed to *create/manage* tunnels, or to run *by name* (as `run-tunnel.sh` does). Copy `CERT_PEM` too if you keep the by-name script.
+   `cert.pem` is only needed to *create/manage* tunnels, or to run *by name* (as `run-tunnel.sh` does). Copy `~/.cloudflared/cert.pem` too if you keep the by-name script.
 5. To carry over accounts/library, copy `data/easy-german.db` (plus `data/audio/` for a full host, and `data/session_token` to keep existing logins valid).
 
 ### Per-host feature flags (read-only mode)
